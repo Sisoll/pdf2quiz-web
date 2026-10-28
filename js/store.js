@@ -1,6 +1,6 @@
 /* 作答紀錄與設定的存取、紀錄檔、匯出與匯入 */
 /* ---------- 紀錄存取 ---------- */
-function emptyRecords() { return { version: RECORD_VERSION, items: {} }; }
+function emptyRecords() { return { version: RECORD_VERSION, items: {}, exams: [] }; }
 function loadRecords() {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || emptyRecords(); }
     catch { return emptyRecords(); }
@@ -121,27 +121,76 @@ async function writeFile() {
     }
 }
 /* 匯入或讀檔共用；記住門檻目前固定，不沿用檔案裡的值 */
-function adoptRecords(data) {
-    records = migrateRecords({ version: data.version || 1, items: data.items, updatedAt: data.updatedAt });
+function normalizeRecords(data) {
+    return migrateRecords({ version: data.version || 1, items: data.items || {}, exams: Array.isArray(data.exams) ? data.exams : [], updatedAt: data.updatedAt });
 }
+/* 取代：直接用檔案的紀錄 */
+function adoptRecords(data) {
+    records = normalizeRecords(data);
+}
+
+/* 合併兩份紀錄（例如 A 電腦與 B 電腦各自練習）
+   - 作答歷程取聯集；同一筆作答（時間 + 選項相同）只留一筆，重複匯入也不會變多
+   - 加強複習 / 暫停複習：以較晚修改的為準（舊資料沒有修改時間時，有標記就保留）
+   - 模擬考成績：依開始時間取聯集
+   合併後依新的歷程重算分數 */
+function mergeRecordSets(a, b) {
+    const out = { version: RECORD_VERSION, items: {}, exams: [] };
+    const ids = new Set([...Object.keys(a.items), ...Object.keys(b.items)]);
+    const hkey = h => `${h.t}|${h.pick}|${h.ok}`;
+    for (const id of ids) {
+        const ra = a.items[id], rb = b.items[id];
+        if (!ra || !rb) { out.items[id] = JSON.parse(JSON.stringify(ra || rb)); continue; }
+        const seen = new Map();
+        for (const h of [...ra.history, ...rb.history]) {
+            const k = hkey(h);
+            // 同一筆作答在兩邊的難度不同時（其中一邊後來改過），保留非 MEDIUM 的那個
+            if (!seen.has(k) || (seen.get(k).level === 'MEDIUM' && h.level !== 'MEDIUM')) seen.set(k, { ...h });
+        }
+        const history = [...seen.values()].sort((x, y) => Date.parse(x.t) - Date.parse(y.t));
+        const ta = ra.markAt ? Date.parse(ra.markAt) : 0, tb = rb.markAt ? Date.parse(rb.markAt) : 0;
+        let review, noReview, markAt;
+        if (ta || tb) {
+            const win = tb > ta ? rb : ra;
+            review = !!win.review; noReview = !!win.noReview; markAt = win.markAt;
+        } else {
+            review = !!(ra.review || rb.review);
+            noReview = !review && !!(ra.noReview || rb.noReview);
+            markAt = null;
+        }
+        const base = ra.base || rb.base;   // 超過保留上限時濃縮的舊資料（極少見）
+        out.items[id] = { history, review, noReview, markAt, ...(base ? { base } : {}) };
+    }
+    const exams = new Map();
+    for (const x of [...(a.exams || []), ...(b.exams || [])]) exams.set(x.at, x);
+    out.exams = [...exams.values()].sort((x, y) => Date.parse(x.at) - Date.parse(y.at)).slice(-EXAM_HISTORY_LIMIT);
+    for (const r of Object.values(out.items)) recompute(r);
+    return out;
+}
+/* 合併後回報新增了多少筆，讓使用者知道發生什麼事 */
+function mergeInto(data) {
+    const incoming = normalizeRecords(data);
+    const count = rs => Object.values(rs.items).reduce((n, r) => n + r.history.length, 0);
+    const before = count(records);
+    records = mergeRecordSets(records, incoming);
+    return { added: count(records) - before, total: count(records) };
+}
+
 async function readFileInto(handle) {
     const text = await (await handle.getFile()).text();
     if (!text.trim()) return false;           // 空檔：保留目前紀錄並寫入
     const data = JSON.parse(text);
     if (!data || typeof data.items !== 'object') throw new Error('不是本程式的紀錄檔');
-    adoptRecords(data);
+    // 開啟紀錄檔時和瀏覽器裡的紀錄合併，不會蓋掉任何一邊
+    mergeInto(data);
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); } catch {}
     return true;
 }
 async function linkHandle(handle, { load }) {
     fileHandle = handle;
     await storeHandle(handle);
-    if (load) {
-        const loaded = await readFileInto(handle);
-        if (!loaded) await writeFile();
-    } else {
-        await writeFile();
-    }
+    if (load) await readFileInto(handle);
+    await writeFile();   // 合併後的結果寫回檔案
     $('file-resume').hidden = true;
     $('file-unlink').hidden = false;
     setFileStatus(`已連結 ${handle.name}`, 'linked');
@@ -225,15 +274,23 @@ function exportCsv() {
     // 加 BOM 讓 Excel 正確顯示中文
     download(`quiz-record-${stamp()}.csv`, '﻿' + [head.map(esc).join(','), ...rows].join('\r\n'), 'text/csv');
 }
-function importJson(file) {
+/* 匯入 JSON：mode = 'merge'（合併，建議）或 'replace'（取代目前的紀錄） */
+function importJson(file, mode) {
     const reader = new FileReader();
     reader.onload = () => {
         try {
             const data = JSON.parse(reader.result);
             if (!data || typeof data.items !== 'object') throw new Error('格式不符');
-            if (!confirm(`要用這個檔案取代目前的作答紀錄嗎？（檔案內有 ${Object.keys(data.items).length} 題的紀錄）`)) return;
-            adoptRecords(data);
-            saveRecords(); resetView();
+            if (mode === 'replace') {
+                if (!confirm(`要用這個檔案「取代」目前的作答紀錄嗎？目前瀏覽器裡的紀錄會被蓋掉。（檔案內有 ${Object.keys(data.items).length} 題的紀錄）`)) return;
+                adoptRecords(data);
+                saveRecords(); resetView();
+                alert('已用檔案取代目前的作答紀錄。');
+            } else {
+                const { added, total } = mergeInto(data);
+                saveRecords(); resetView();
+                alert(added ? `合併完成：新增 ${added} 筆作答，目前共 ${total} 筆。` : `合併完成：檔案裡的作答都已經存在，沒有新增（目前共 ${total} 筆）。`);
+            }
         } catch (e) { alert('匯入失敗：' + e.message); }
     };
     reader.readAsText(file, 'utf-8');

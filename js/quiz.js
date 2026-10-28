@@ -137,6 +137,7 @@ function render() {
 
     const q = queue[pos];
     answeredInView = false;
+    $('undo-btn').hidden = true;
     $('meta').classList.add('locked');
     $('category').textContent = q.category;
     $('progress').textContent = `${pos + 1} / ${queue.length}`;
@@ -150,10 +151,23 @@ function render() {
     q.options.forEach((opt, i) => {
         const btn = document.createElement('button');
         btn.className = 'option-btn';
-        btn.textContent = `(${i + 1}) ${opt}`;
+        btn.append(optionLabel(i + 1, opt));
         btn.onclick = () => answer(i + 1);
         box.appendChild(btn);
     });
+}
+
+/* 選項內容：圓形題號 + 文字 */
+function optionLabel(n, text) {
+    const frag = document.createDocumentFragment();
+    const no = document.createElement('span');
+    no.className = 'opt-no';
+    no.textContent = n;
+    const t = document.createElement('span');
+    t.className = 'opt-text';
+    t.textContent = text;
+    frag.append(no, t);
+    return frag;
 }
 
 /* ---------- 作答 ---------- */
@@ -165,12 +179,15 @@ function answer(pick) {
     const r = rec(q.id);
     // 本輪得分：每一輪每題只算第一次作答，回上一題重答不重複計算
     const key = `${session.round}:${q.id}`;
-    if (!(key in session.answers) || session.answers[key] === 'skip') {
-        if (session.answers[key] === 'skip') session.skipped--;
+    const prevState = key in session.answers ? session.answers[key] : undefined;
+    const counted = prevState === undefined || prevState === 'skip';
+    if (counted) {
+        if (prevState === 'skip') session.skipped--;
         session.answers[key] = ok;
         session.answered++;
         if (ok) session.correct++;
     }
+    lastAnswer = { qid: q.id, key, counted, prevState, ok };   // 給「復原」用
     // 先以 MEDIUM 計分，答完選難度時再更新這一筆
     r.history.push({ t: new Date().toISOString(), pick, ok, level: 'MEDIUM' });
     recompute(r);
@@ -182,10 +199,30 @@ function answer(pick) {
         else if (i + 1 === pick) btn.classList.add('wrong');
     });
     $('meta').classList.remove('locked');
+    $('undo-btn').hidden = false;
     renderResult(q);
     renderMeta(q);
     renderStats();
     renderSessionBar();
+}
+
+/* 復原：還停在這一題時，撤銷剛才的作答（點錯時用），題目回到未作答 */
+function undoAnswer() {
+    if (!session || !answeredInView || advancing || !lastAnswer) return;
+    const q = queue[pos];
+    if (lastAnswer.qid !== q.id) return;
+    const r = rec(q.id);
+    r.history.pop();
+    recompute(r);
+    if (lastAnswer.counted) {
+        session.answered--;
+        if (lastAnswer.ok) session.correct--;
+        if (lastAnswer.prevState === 'skip') { session.answers[lastAnswer.key] = 'skip'; session.skipped++; }
+        else delete session.answers[lastAnswer.key];
+    }
+    lastAnswer = null;
+    saveRecords();
+    render();
 }
 
 function setLevel(level) {
@@ -207,6 +244,7 @@ function toggleMark(key) {
     if (!current && !answeredInView) return;
     const r = rec(q.id);
     r[key] = !current;
+    r.markAt = new Date().toISOString();   // 合併兩台電腦的紀錄時，以較晚的標記為準
     if (r[key]) r[key === 'review' ? 'noReview' : 'review'] = false;
     saveRecords(); if (answeredInView) renderResult(q); renderMeta(q); renderStats();
 }

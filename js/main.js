@@ -6,6 +6,7 @@ let queue = [];
 let pos = 0;
 let answeredInView = false;
 let advancing = false;
+let lastAnswer = null;   // 最近一次作答，給「復原」用
 let session = null;      // 進行中的一輪：{ limit, round, answers, answered, correct, skipped, startedAt }
 let lastResult = null;   // 上一輪的成績
 let view = 'quiz';       // 目前的分頁：quiz（練習）或 browse（題目總覽）
@@ -16,8 +17,11 @@ function setView(v) {
     document.querySelectorAll('#tabs .tab').forEach(t => t.classList.toggle('on', t.dataset.view === v));
     $('quiz').hidden = v !== 'quiz';
     $('browse').hidden = v !== 'browse';
+    $('exam').hidden = v !== 'exam';
+    $('setup').hidden = v === 'exam';   // 模擬考有自己的設定
     document.body.classList.toggle('view-browse', v === 'browse');
     if (v === 'browse') renderBrowse(true);
+    else if (v === 'exam') { if (!exam && $('exam-result').hidden) renderExamHistory(); }
     else renderStats();
 }
 
@@ -38,6 +42,8 @@ function init() {
     if (!Array.isArray(settings.exclude)) settings.exclude = ['noReview'];
     buildChips();
     initBrowse();
+    initExam();
+    $('undo-btn').onclick = undoAnswer;
     document.querySelectorAll('#tabs .tab').forEach(t => { t.onclick = () => setView(t.dataset.view); });
 
     $('start-btn').onclick = toggleStart;
@@ -54,8 +60,10 @@ function init() {
     $('noreview-btn').onclick = () => toggleMark('noReview');
     $('export-json').onclick = exportJson;
     $('export-csv').onclick = exportCsv;
-    $('import-btn').onclick = () => $('import-file').click();
-    $('import-file').onchange = e => { if (e.target.files[0]) importJson(e.target.files[0]); e.target.value = ''; };
+    let importMode = 'merge';
+    $('import-merge').onclick = () => { importMode = 'merge'; $('import-file').click(); };
+    $('import-replace').onclick = () => { importMode = 'replace'; $('import-file').click(); };
+    $('import-file').onchange = e => { if (e.target.files[0]) importJson(e.target.files[0], importMode); e.target.value = ''; };
     $('reset-btn').onclick = () => {
         if (confirm('確定要清除所有作答紀錄、難度與標記嗎？建議先匯出備份。')) {
             records = emptyRecords(); saveRecords(); resetView();
@@ -64,6 +72,7 @@ function init() {
 
     document.addEventListener('keydown', e => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        if (view === 'exam') return examKey(e);
         if (view !== 'quiz') return;   // 題目總覽頁不使用作答快捷鍵
         const k = e.key.toLowerCase();
         // Enter 一律由這裡處理（preventDefault 也會擋掉按鈕預設的點擊，避免重複觸發）
@@ -77,6 +86,7 @@ function init() {
         else if (k === 'h') setLevel('HARD');
         else if (k === 'r' || k === 'u') toggleMark('review');
         else if (k === 's') toggleMark('noReview');
+        else if (k === 'z') undoAnswer();
     });
 
     saveRecords();   // 舊紀錄轉換後寫回

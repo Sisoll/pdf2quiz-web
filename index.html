@@ -9,13 +9,23 @@
 <body>
 <div class="wrap">
 
-    <nav class="tabs" id="tabs">
-        <button class="tab on" data-view="quiz">練習</button>
-        <button class="tab" data-view="browse">題目總覽</button>
-    </nav>
+    <header class="app-header">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true">Q</div>
+            <div>
+                <div class="brand-title">金融證照模擬測驗</div>
+                <div class="brand-sub">金融市場常識 ・ 職業道德</div>
+            </div>
+        </div>
+        <nav class="tabs" id="tabs">
+            <button class="tab on" data-view="quiz">練習</button>
+            <button class="tab" data-view="browse">題目總覽</button>
+            <button class="tab" data-view="exam">模擬考</button>
+        </nav>
+    </header>
 
     <div class="card" id="setup">
-        <h1>金融證照模擬測驗</h1>
+        <h1 class="card-title">出題設定</h1>
         <div class="controls">
             <label>科目
                 <select id="f-category"></select>
@@ -90,13 +100,62 @@
         </div>
         <div id="question" class="question">正在載入題庫，請稍候...</div>
         <div id="options"></div>
-        <div id="result" class="result"></div>
+        <div class="result-row">
+            <div id="result" class="result"></div>
+            <button class="linkbtn undo" id="undo-btn" hidden title="點錯了？撤銷這次作答（快捷鍵 Z）">↶ 復原這次作答</button>
+        </div>
         <div class="nav" id="nav">
             <button class="btn light" id="prev-btn">上一題</button>
             <button class="btn danger" id="stop-btn">中止</button>
             <button class="btn" id="next-btn">下一題</button>
         </div>
-        <div class="hint">快捷鍵：Enter 開始 ・ 1–4 作答 ・ 答完後按 E / M / H 選難度並進下一題，或按 Enter / → 以 MEDIUM 進下一題 ・ R 加強複習、S 暫停複習（按 × 或再按一次移除，作答前也可以）・ ← 上一題 ・ Esc 中止</div>
+        <div class="hint">快捷鍵：Enter 開始 ・ 1–4 作答 ・ 答完後按 E / M / H 選難度並進下一題，或按 Enter / → 以 MEDIUM 進下一題 ・ R 加強複習、S 暫停複習（按 × 或再按一次移除，作答前也可以）・ Z 復原這次作答 ・ ← 上一題 ・ Esc 中止</div>
+    </div>
+
+    <div class="card" id="exam" hidden>
+        <div id="exam-setup">
+            <h1 class="card-title">模擬考</h1>
+            <div class="controls">
+                <div class="controls" id="x-counts"></div>
+                <label>時間（分鐘，0 為不限）
+                    <input type="number" id="x-time" min="0" value="60">
+                </label>
+                <label>每科及格分數
+                    <input type="number" id="x-pass" min="0" max="100" value="70">
+                </label>
+            </div>
+            <label class="check"><input type="checkbox" id="x-record" checked> 成績計入作答紀錄（有作答的題目各記一次，分數會跟著變）</label>
+            <div class="hint">各科從題庫完全隨機抽題（不加權），每科滿分 100 分。作答中不顯示答案，可以隨時改答案，交卷後才看結果。</div>
+            <div class="start-row"><button class="btn" id="x-start">開始考試</button></div>
+            <div id="x-history" class="x-history"></div>
+        </div>
+
+        <div id="exam-run" hidden>
+            <div class="exam-bar">
+                <b id="x-timer" class="x-timer"></b>
+                <span id="x-progress"></span>
+                <button class="btn danger" id="x-submit">交卷</button>
+            </div>
+            <div id="x-grid" class="x-grid"></div>
+            <div class="meta"><span id="x-cat" class="badge"></span><span id="x-num" class="progress"></span></div>
+            <div id="x-question" class="question"></div>
+            <div id="x-options"></div>
+            <div class="nav">
+                <button class="btn light" id="x-prev">上一題</button>
+                <button class="btn" id="x-next">下一題</button>
+            </div>
+            <div class="hint">快捷鍵：1–4 選答案（再按一次取消）・ ← → 換題 ・ 點上方題號可以直接跳題</div>
+        </div>
+
+        <div id="exam-result" hidden>
+            <div id="x-summary" class="x-summary"></div>
+            <div class="browse-head">
+                <span class="browse-count">檢討</span>
+                <label class="check"><input type="checkbox" id="x-wrong-only"> 只看答錯與未作答</label>
+                <button class="btn light" id="x-back">回到模擬考設定</button>
+            </div>
+            <div id="x-review" class="browse-list"></div>
+        </div>
     </div>
 
     <div class="card" id="browse" hidden>
@@ -118,7 +177,8 @@
         <div class="pager" id="b-pager-bottom"></div>
     </div>
 
-    <div class="card">
+    <div class="card card-muted">
+        <h2 class="card-title small">作答紀錄</h2>
         <div class="file-box">
             <div><b>作答紀錄檔：</b><span id="file-status">尚未連結（目前只存在瀏覽器裡）</span></div>
             <div class="footer-actions" id="file-actions">
@@ -127,16 +187,17 @@
                 <button class="btn" id="file-resume" hidden>繼續使用上次的紀錄檔</button>
                 <button class="btn light" id="file-unlink" hidden>取消連結</button>
             </div>
-            <div class="hint" id="file-hint">連結後，每次作答、標記都會自動寫回這個 JSON 檔。請用 Chrome 或 Edge 開啟本頁。</div>
+            <div class="hint" id="file-hint">連結後，每次作答、標記都會自動寫回這個 JSON 檔。開啟既有紀錄檔時，會和瀏覽器裡的紀錄合併，不會蓋掉任何一邊。請用 Chrome 或 Edge 開啟本頁。</div>
         </div>
         <div class="footer-actions">
             <button class="btn light" id="export-json">匯出作答紀錄（JSON）</button>
             <button class="btn light" id="export-csv">匯出作答紀錄（CSV / Excel）</button>
-            <button class="btn light" id="import-btn">匯入作答紀錄</button>
+            <button class="btn light" id="import-merge" title="把檔案裡的作答加進目前的紀錄，重複的不會多算">合併匯入</button>
+            <button class="btn light" id="import-replace" title="用檔案的紀錄取代目前的紀錄">取代匯入</button>
             <button class="btn light" id="reset-btn">清除所有紀錄</button>
             <input type="file" id="import-file" accept=".json,application/json">
         </div>
-        <div class="hint">沒有連結紀錄檔時，紀錄只存在這台電腦的瀏覽器裡。匯出 CSV 可以直接用 Excel 打開做分析。</div>
+        <div class="hint">沒有連結紀錄檔時，紀錄只存在這台電腦的瀏覽器裡。兩台電腦各自練習時，用「合併匯入」把另一台匯出的 JSON 加進來，重複的作答不會多算。匯出 CSV 可以直接用 Excel 打開做分析。</div>
     </div>
 </div>
 
@@ -148,6 +209,7 @@
 <script src="js/filters.js"></script>
 <script src="js/quiz.js"></script>
 <script src="js/browse.js"></script>
+<script src="js/exam.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

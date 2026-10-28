@@ -1,0 +1,11 @@
+{
+  "name": "pdf2quiz-web",
+  "private": true,
+  "description": "金融證照題庫 PDF 轉網頁測驗",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 tests/*.test.js"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^22.15.0"
+  }
+}
