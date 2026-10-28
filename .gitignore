@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 編輯器與系統檔
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 個人作答紀錄（不要上傳）
+quiz-record*.json
+quiz-record*.csv
