@@ -1,7 +1,7 @@
 /* 全域狀態與初始化（最後載入） */
 const allQuestions = window.QUIZ_DATA || [];
 let settings = loadSettings();
-let records = migrateRecords(loadRecords());
+let records = emptyRecords();   // init() 從 IndexedDB 載入
 let queue = [];
 let pos = 0;
 let answeredInView = false;
@@ -25,7 +25,8 @@ function setView(v) {
     else renderStats();
 }
 
-function init() {
+async function init() {
+    records = await loadRecords();
     if (!allQuestions.length) {
         $('question').textContent = '找不到題庫。請先執行 parse_pdf.py 產生 questions.js。';
         return;

@@ -42,7 +42,7 @@ function recompute(r) {
     r.correct = (r.base?.correct || 0) + r.history.filter(h => h.ok).length;
     r.wrong = (r.base?.wrong || 0) + r.history.filter(h => !h.ok).length;
     const last = r.history[r.history.length - 1];
-    r.level = last ? (last.level || 'MEDIUM') : 'MEDIUM';
+    r.level = last ? (last.level || 'MEDIUM') : null;   // 未作答的題目沒有難度
     r.last = last ? (last.ok ? 'correct' : 'wrong') : null;
     r.lastAt = last ? last.t : null;
 }

@@ -13,7 +13,7 @@ function test(r, key) {
         case 'everWrong': return r.wrong > 0;
         case 'review': return !!r.review;
         case 'noReview': return !!r.noReview;
-        case 'EASY': case 'MEDIUM': case 'HARD': return r.level === key;
+        case 'EASY': case 'MEDIUM': case 'HARD': return r.level === key;   // 未作答的題目 level 為 null，不符合任何難度
         default: return true;
     }
 }
@@ -103,7 +103,7 @@ function renderChips() {
 function renderStats() {
     renderChips();
     const scope = allQuestions.filter(q => settings.category === 'all' || q.category === settings.category);
-    let done = 0, mastered = 0, review = 0, noReview = 0, easy = 0, hard = 0, correct = 0, wrong = 0;
+    let done = 0, mastered = 0, review = 0, noReview = 0, easy = 0, medium = 0, hard = 0, correct = 0, wrong = 0;
     for (const q of scope) {
         const r = peek(q.id);
         if (r.correct + r.wrong > 0) done++;
@@ -111,6 +111,7 @@ function renderStats() {
         if (r.review) review++;
         if (r.noReview) noReview++;
         if (r.level === 'EASY') easy++;
+        if (r.level === 'MEDIUM') medium++;
         if (r.level === 'HARD') hard++;
         correct += r.correct; wrong += r.wrong;
     }
@@ -121,7 +122,7 @@ function renderStats() {
         `<span>已作答 <b>${done}</b></span>` +
         `<span>已記住 <b>${mastered}</b></span>` +
         `<span>加強複習 <b>${review}</b> ・ 暫停複習 <b>${noReview}</b></span>` +
-        `<span>EASY <b>${easy}</b> ・ MEDIUM <b>${scope.length - easy - hard}</b> ・ HARD <b>${hard}</b></span>` +
+        `<span>EASY <b>${easy}</b> ・ MEDIUM <b>${medium}</b> ・ HARD <b>${hard}</b></span>` +
         `<span>累計答對率 <b>${rate}</b></span>`;
 }
 

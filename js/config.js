@@ -1,7 +1,7 @@
 /* 常數、計分規則、出題條件與共用小工具 */
-const STORAGE_KEY = 'pdf2quiz-records-v1';
+const STORAGE_KEY = 'pdf2quiz-records-v1';   // 舊版存在 localStorage 的位置，現在改存 IndexedDB，只在搬移時讀取
 const SETTINGS_KEY = 'pdf2quiz-settings-v1';
-const RECORD_VERSION = 2;
+const RECORD_VERSION = 3;   // 3：精簡格式（作答歷程改用陣列、不存算得出來的欄位）
 const HISTORY_LIMIT = 200;   // 每題保留的作答歷史筆數，更早的會濃縮成起始分數
 
 /* ---------- 計分規則 ---------- */

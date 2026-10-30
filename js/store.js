@@ -1,21 +1,88 @@
 /* 作答紀錄與設定的存取、紀錄檔、匯出與匯入 */
 /* ---------- 紀錄存取 ---------- */
 function emptyRecords() { return { version: RECORD_VERSION, items: {}, exams: [] }; }
-function loadRecords() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || emptyRecords(); }
-    catch { return emptyRecords(); }
+
+/* ---------- 精簡格式（存檔用） ----------
+   每筆作答存成 [時間, 選項, 對錯, 難度, 來源]：
+   時間是 Unix 秒數的 36 進位字串；對錯 1 / 0；難度 E / M / H；模擬考的作答才有第 5 欄 'x'
+   程式內部仍用物件格式，只在存檔、讀檔時轉換 */
+const LEVEL_CODE = { EASY: 'E', MEDIUM: 'M', HARD: 'H' };
+const LEVEL_NAME = { E: 'EASY', M: 'MEDIUM', H: 'HARD' };
+const toSec = t => Math.floor(Date.parse(t) / 1000) || 0;
+function packHistory(h) {
+    const a = [toSec(h.t).toString(36), h.pick, h.ok ? 1 : 0, LEVEL_CODE[h.level] || 'M'];
+    if (h.src === 'exam') a.push('x');
+    return a;
+}
+function unpackHistory(a) {
+    const h = { t: new Date(parseInt(a[0], 36) * 1000).toISOString(), pick: a[1], ok: a[2] === 1, level: LEVEL_NAME[a[3]] || 'MEDIUM' };
+    if (a[4] === 'x') h.src = 'exam';
+    return h;
+}
+/* 分數、答對次數等算得出來的欄位不存，載入時重算；標記只在有值時才存 */
+function packRecords(data = records) {
+    const items = {};
+    for (const [id, r] of Object.entries(data.items)) {
+        const o = { h: r.history.map(packHistory) };
+        if (r.base) o.base = r.base;
+        if (r.review) o.review = true;
+        if (r.noReview) o.noReview = true;
+        if (r.markAt) o.markAt = r.markAt;
+        if (o.h.length || Object.keys(o).length > 1) items[id] = o;   // 完全沒有資料的題目不存
+    }
+    return { version: RECORD_VERSION, updatedAt: data.updatedAt, items, exams: data.exams || [] };
+}
+
+/* ---------- 瀏覽器端儲存（IndexedDB） ----------
+   localStorage 每個網站只有約 5 MB，紀錄多了會存不進去，所以改存 IndexedDB。
+   舊版存在 localStorage 的紀錄會在載入時搬過來，存檔成功後刪掉；IndexedDB 不能用時才退回 localStorage */
+const RECORDS_IDB_KEY = 'records';
+let legacyPending = false;   // localStorage 裡還有舊資料，等 IndexedDB 存檔成功後刪除
+let browserWriting = Promise.resolve();
+let saveWarned = false;
+
+async function loadRecords() {
+    let data = null, legacy = null;
+    try { data = await idb('readonly', s => s.get(RECORDS_IDB_KEY)); } catch {}
+    try { legacy = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch {}
+    if (!legacy || typeof legacy.items !== 'object') return migrateRecords(data || emptyRecords());
+    legacyPending = true;
+    // 兩邊都有資料時合併，不會蓋掉任何一邊
+    return data ? mergeRecordSets(normalizeRecords(data), normalizeRecords(legacy)) : normalizeRecords(legacy);
+}
+/* 依呼叫順序寫入，避免較舊的內容蓋掉較新的 */
+function saveToBrowser() {
+    const data = packRecords();
+    browserWriting = browserWriting.then(() => idb('readwrite', s => s.put(data, RECORDS_IDB_KEY)).then(() => {
+        if (legacyPending) { try { localStorage.removeItem(STORAGE_KEY); } catch {} legacyPending = false; }
+    }).catch(() => {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); legacyPending = true; }
+        catch (e) { warnSaveFailed(e); }
+    }));
+    return browserWriting;
+}
+/* 存不進去時一定要讓使用者知道，不能只印在 console */
+function warnSaveFailed(e) {
+    console.warn('無法儲存紀錄', e);
+    if (saveWarned) return;
+    saveWarned = true;
+    alert(`作答紀錄無法存進瀏覽器（${e.message}）。請先匯出 JSON 備份，或連結紀錄檔。`);
 }
 /* 舊版紀錄：題目層級的難度改記到最近一次作答上，再用新公式重算 */
 function migrateRecords(data) {
     if (!data || typeof data.items !== 'object') return emptyRecords();
-    if ((data.version || 1) < RECORD_VERSION) {
+    // 精簡格式（版本 3）轉回程式內部用的物件格式
+    for (const r of Object.values(data.items)) {
+        if (Array.isArray(r.h)) { r.history = r.h.map(unpackHistory); delete r.h; }
+    }
+    if ((data.version || 1) < 2) {
         for (const r of Object.values(data.items)) {
             r.history = r.history || [];
             r.history.forEach(h => { h.level = h.level || 'MEDIUM'; });
             if (r.level && r.history.length) r.history[r.history.length - 1].level = r.level;
         }
-        data.version = RECORD_VERSION;
     }
+    data.version = RECORD_VERSION;
     for (const r of Object.values(data.items)) {
         r.history = r.history || [];
         // 「不清楚」已併入「加強複習」
@@ -28,7 +95,7 @@ function migrateRecords(data) {
 }
 function saveRecords() {
     records.updatedAt = new Date().toISOString();
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); } catch (e) { console.warn('無法儲存紀錄', e); }
+    saveToBrowser();
     scheduleFileWrite();
 }
 function loadSettings() {
@@ -37,7 +104,7 @@ function loadSettings() {
     try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { s = {}; }
     // 舊版的單選「題目範圍」轉成「包含」
     if ('status' in s) {
-        const map = { noLevel: 'MEDIUM', unclear: 'review' };
+        const map = { noLevel: 'new', unclear: 'review' };   // 未分級 = 未作答
         const st = map[s.status] || s.status;
         if (!Array.isArray(s.include)) s.include = st && st !== 'all' ? [st] : [];
         delete s.status;
@@ -58,11 +125,11 @@ function saveSettings() {
 }
 function rec(id) {
     if (!records.items[id]) {
-        records.items[id] = { correct: 0, wrong: 0, score: 0, streak: 0, review: false, noReview: false, level: 'MEDIUM', last: null, lastAt: null, history: [] };
+        records.items[id] = { correct: 0, wrong: 0, score: 0, streak: 0, review: false, noReview: false, level: null, last: null, lastAt: null, history: [] };
     }
     return records.items[id];
 }
-const EMPTY = { correct: 0, wrong: 0, score: 0, streak: 0, review: false, noReview: false, level: 'MEDIUM', history: [] };
+const EMPTY = { correct: 0, wrong: 0, score: 0, streak: 0, review: false, noReview: false, level: null, history: [] };   // 未作答的題目沒有難度
 function peek(id) { return records.items[id] || EMPTY; }
 function isMastered(r) { return r.score >= settings.threshold && !r.review; }
 function fmtScore(n) {
@@ -78,21 +145,28 @@ let fileHandle = null;
 let writeTimer = null;
 let writing = Promise.resolve();
 
+/* 共用一個連線；開啟失敗的話下次再試 */
+let dbOpening = null;
+function openDb() {
+    if (!dbOpening) {
+        dbOpening = new Promise((resolve, reject) => {
+            const req = indexedDB.open('pdf2quiz', 1);
+            req.onupgradeneeded = () => req.result.createObjectStore('kv');
+            req.onerror = () => reject(req.error);
+            req.onsuccess = () => resolve(req.result);
+        });
+        dbOpening.catch(() => { dbOpening = null; });
+    }
+    return dbOpening;
+}
 function idb(mode, fn) {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open('pdf2quiz', 1);
-        req.onupgradeneeded = () => req.result.createObjectStore('kv');
-        req.onerror = () => reject(req.error);
-        req.onsuccess = () => {
-            try {
-                const tx = req.result.transaction('kv', mode);
-                const r = fn(tx.objectStore('kv'));
-                tx.oncomplete = () => resolve(r && r.result);
-                tx.onerror = () => reject(tx.error);
-                tx.onabort = () => reject(tx.error);
-            } catch (e) { reject(e); }
-        };
-    });
+    return openDb().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction('kv', mode);
+        const r = fn(tx.objectStore('kv'));
+        tx.oncomplete = () => resolve(r && r.result);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+    }));
 }
 const storeHandle = h => idb('readwrite', s => h ? s.put(h, 'recordFile') : s.delete('recordFile')).catch(() => {});
 const loadHandle = () => idb('readonly', s => s.get('recordFile')).catch(() => null);
@@ -102,7 +176,7 @@ function setFileStatus(text, cls = '') {
     $('file-status').className = cls;
 }
 function recordPayload() {
-    return JSON.stringify({ ...records, threshold: settings.threshold }, null, 2);
+    return JSON.stringify({ ...packRecords(), threshold: settings.threshold });
 }
 function scheduleFileWrite() {
     if (!fileHandle) return;
@@ -137,7 +211,7 @@ function adoptRecords(data) {
 function mergeRecordSets(a, b) {
     const out = { version: RECORD_VERSION, items: {}, exams: [] };
     const ids = new Set([...Object.keys(a.items), ...Object.keys(b.items)]);
-    const hkey = h => `${h.t}|${h.pick}|${h.ok}`;
+    const hkey = h => `${toSec(h.t)}|${h.pick}|${h.ok}`;   // 精簡格式只記到秒，比對時統一用秒
     for (const id of ids) {
         const ra = a.items[id], rb = b.items[id];
         if (!ra || !rb) { out.items[id] = JSON.parse(JSON.stringify(ra || rb)); continue; }
@@ -183,7 +257,7 @@ async function readFileInto(handle) {
     if (!data || typeof data.items !== 'object') throw new Error('不是本程式的紀錄檔');
     // 開啟紀錄檔時和瀏覽器裡的紀錄合併，不會蓋掉任何一邊
     mergeInto(data);
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); } catch {}
+    await saveToBrowser();
     return true;
 }
 async function linkHandle(handle, { load }) {
@@ -258,8 +332,8 @@ function download(name, content, type) {
 function stamp() { return new Date().toISOString().slice(0, 16).replace(/[-:T]/g, ''); }
 
 function exportJson() {
-    const out = { ...records, exportedAt: new Date().toISOString(), threshold: settings.threshold };
-    download(`quiz-record-${stamp()}.json`, JSON.stringify(out, null, 2), 'application/json');
+    const out = { ...packRecords(), exportedAt: new Date().toISOString(), threshold: settings.threshold };
+    download(`quiz-record-${stamp()}.json`, JSON.stringify(out), 'application/json');
 }
 function exportCsv() {
     const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;

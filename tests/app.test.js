@@ -69,6 +69,8 @@ describe('舊版資料轉換', () => {
         assert.equal(r.s.threshold, 5);                      // 門檻固定 5
         assert.deepEqual(r.s.include, []);                   // 尚未記住 → 排除已記住
         assert.ok(r.s.exclude.includes('mastered'));
+        await sleep(100);
+        assert.equal(await page.evaluate(() => localStorage.getItem(STORAGE_KEY)), null);   // 已搬到 IndexedDB
         assert.deepEqual(page.errors, []);
         await page.closeContext();
     });
@@ -94,6 +96,15 @@ describe('出題條件', () => {
         assert.deepEqual(await count(page, ['EASY'], ['noReview']), ['1']);
         assert.deepEqual(await count(page, [], ['new', 'EASY']), ['2', '3', '4']);
         assert.deepEqual(await count(page, ['EASY'], ['EASY']), []);
+        await page.closeContext();
+    });
+
+    test('未作答的題目沒有難度：不符合任何難度條件，也不算進統計', async () => {
+        const page = await openPage({ records });
+        assert.deepEqual(await count(page, ['MEDIUM'], []), ['3', '4']);
+        assert.equal((await count(page, [], ['MEDIUM'])).length, 1118);
+        assert.equal(await page.evaluate(() => peek('ETH-0006').level), null);
+        assert.match(await text(page, '#stats'), /EASY 2 ・ MEDIUM 2 ・ HARD 1/);
         await page.closeContext();
     });
 
@@ -162,6 +173,15 @@ describe('練習', () => {
         assert.match(await text(page, '#session-bar'), /已答 0 題/);
         await page.keyboard.press('4');
         assert.match(await text(page, '#session-bar'), /本輪得分 100/);
+        await page.closeContext();
+    });
+
+    test('難度：作答前沒有選取任何難度，答完預設 MEDIUM', async () => {
+        const page = await openPage();
+        await page.click('#start-btn');
+        assert.equal(await page.$$eval('.remark[data-level].on', b => b.length), 0);
+        await page.keyboard.press('4');
+        assert.deepEqual(await page.$$eval('.remark[data-level].on', b => b.map(x => x.dataset.level)), ['MEDIUM']);
         await page.closeContext();
     });
 
@@ -276,6 +296,54 @@ describe('合併紀錄', () => {
         const page = await openPage({ records: { version: 2, items: { 'ETH-0009': { history: history('OM') } } } });
         const r = await page.evaluate(() => { adoptRecords({ version: 2, items: { 'ETH-0001': { history: [] } } }); return Object.keys(records.items); });
         assert.deepEqual(r, ['ETH-0001']);
+        await page.closeContext();
+    });
+});
+
+/* ---------- 儲存 ---------- */
+describe('儲存', () => {
+    test('作答後以精簡格式存進 IndexedDB，重新整理後還在', async () => {
+        const page = await openPage();
+        await page.click('#start-btn');
+        await page.keyboard.press('4');
+        await page.keyboard.press('h'); await sleep(350);
+        await page.evaluate(() => browserWriting);
+        const saved = await page.evaluate(() => idb('readonly', s => s.get(RECORDS_IDB_KEY)));
+        assert.equal(saved.version, 3);
+        assert.deepEqual(Object.keys(saved.items), ['ETH-0001']);   // 沒資料的題目不存
+        const item = saved.items['ETH-0001'];
+        assert.deepEqual(Object.keys(item), ['h']);                 // 不存分數等算得出來的欄位
+        assert.deepEqual(item.h[0].slice(1), [4, 1, 'H']);
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector('#f-chips .chip'));
+        const r = await page.evaluate(() => ({ level: peek('ETH-0001').level, score: peek('ETH-0001').score }));
+        assert.deepEqual(r, { level: 'HARD', score: 1 });
+        assert.deepEqual(page.errors, []);
+        await page.closeContext();
+    });
+
+    test('紀錄檔不縮排，讀回來分數相同；和毫秒格式的舊紀錄合併不會重複', async () => {
+        const page = await openPage({ records: { version: 2, items: {
+            'ETH-0001': { history: [{ t: '2026-01-01T00:00:00.123Z', pick: 4, ok: true, level: 'EASY' }, { t: '2026-01-02T00:00:00.456Z', pick: 4, ok: true, level: 'HARD' }] },
+            'ETH-0002': { history: [{ t: '2026-01-01T01:00:00.789Z', pick: 1, ok: false, level: 'MEDIUM', src: 'exam' }], review: true, markAt: '2026-01-01T02:00:00.000Z' },
+        } } });
+        const r = await page.evaluate(() => {
+            const text = recordPayload();
+            const back = normalizeRecords(JSON.parse(text));
+            const merged = mergeInto(JSON.parse(text));
+            return {
+                newline: text.includes('\n'),
+                scores: [back.items['ETH-0001'].score, back.items['ETH-0002'].score],
+                src: back.items['ETH-0002'].history[0].src,
+                review: back.items['ETH-0002'].review,
+                merged,
+            };
+        });
+        assert.equal(r.newline, false);
+        assert.deepEqual(r.scores, [4.0, -1]);   // EASY 2.5 + HARD 1.0 × 1.5
+        assert.equal(r.src, 'exam');
+        assert.equal(r.review, true);
+        assert.deepEqual(r.merged, { added: 0, total: 3 });
         await page.closeContext();
     });
 });
