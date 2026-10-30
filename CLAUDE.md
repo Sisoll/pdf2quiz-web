@@ -35,6 +35,8 @@ node tools/verify-banks.js                         # 逐題比對 banks/ 和 que
 - **難度**：未作答的題目 `level` 是 `null`（未分級），答完預設 MEDIUM，題目的難度 = 最近一次作答的難度。不要讓未作答的題目落入任何難度的條件或統計。
 - **計分與出題參數**都在 `js/config.js`（`SCORING`、`RANDOM_WEIGHT`、`CONDITIONS`、`HISTORY_LIMIT`）。README 的「計分規則」一節要和這裡一致。
 - **題庫管理頁**（`manage.html` + `js/manage.js`，載入 `banks`、`scoring`、`store`，不載入測驗頁的 `filters`／`quiz`／`browse`／`exam`／`main`，所以兩頁共用的常數與工具要放在 `config.js`）：使用者匯入的題庫存在 IndexedDB 的 `userBanks`（題庫 id → 題庫檔內容），自建組合在 `userCombos`，備份提醒的狀態在 `manageMeta`。`importData()` 依內容判斷題庫檔、完整備份（`format: "pdf2quiz-backup"`）、作答紀錄檔或舊版 `questions.json`。和內建題庫 id 相同的一律另存成新 id；一個類別 key 只對應一個名稱。
+- **從 PDF 建立題庫**（`js/pdftext.js`、`js/templates.js`、`templates/index.js`、`js/manage-pdf.js`）：`extractPdfLines()` 用 `vendor/pdfjs/` 的 pdf.js 3.x UMD 版取出文字行（依需要才用 script 載入；新版 pdf.js 只有 ES module，雙擊開啟時不能用），每行經過 `normalizeLine()`（去掉中文字之間的空白）；Python 工具 `tools/extract_text.py` 的輸出也走同一個正規化。樣板是可讀的設定（`start` 正規表達式含 `num`／`rest`／`ans` 群組、`sequential`、`options.marker`、`answer.position`、`ignore`），`rankTemplates()` 全部試一次依解析題數排序。現有兩份 PDF 用第一個內建樣板解析，和內建題庫只差空白與 ETH 第 279 題的人工修正。
+- **修正題目**：使用者題庫直接改題庫檔並記進 `corrections`；內建題庫的修正存在 IndexedDB 的 `builtinCorrections`，`loadBanks()` 載入時用 `applyCorrections()` 套上（內建題庫已等於修正後的值就略過；值對不上時記進 `correctionConflicts` 提示）。修正答案不重新判定過去的作答。
 - **多個分頁同時開著**：寫進 IndexedDB 之後呼叫 `notifyChanged('records' | 'banks')`，其他分頁透過 localStorage 的 `storage` 事件（`onDataChanged()`）收到通知：作答紀錄直接重新讀取；題庫變了，閒置的測驗頁會重新整理，進行中的練習或考試只提示。
 - **一輪練習的狀態**（`session`）和進行中的模擬考只存在記憶體，沒有寫進紀錄；模擬考交卷時才寫入。
 

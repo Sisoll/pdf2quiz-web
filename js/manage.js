@@ -37,7 +37,23 @@ async function saveRecordsNow() {
     await saveToBrowser();
     notifyChanged('records');
 }
-const bankData = id => banks[id] && (banks[id].builtin ? window.QUIZ_BANKS[id] : userBankData[id]);
+/* 題庫檔內容；內建題庫有使用者修正時，匯出的是套上修正後的內容，修正也記進 corrections */
+function bankData(id) {
+    const entry = banks[id];
+    if (!entry) return null;
+    if (!entry.builtin) return userBankData[id];
+    const base = window.QUIZ_BANKS[id];
+    const fix = builtinCorrections[id];
+    if (!fix || !fix.rows.length) return base;
+    const data = JSON.parse(JSON.stringify(base));
+    const cols = data.questions.columns;
+    for (const row of data.questions.rows) {
+        const q = entry.questions.find(x => x.seq === row[cols.indexOf('seq')]);
+        for (const f of ['question', 'options', 'answer']) row[cols.indexOf(f)] = q[f];
+    }
+    data.corrections.rows.push(...tableRows(fix).map(r => data.corrections.columns.map(c => r[c] ?? null)));
+    return data;
+}
 
 /* ---------- 題庫檢查 ---------- */
 function validateBank(data) {
@@ -234,7 +250,7 @@ async function deleteCombo(id) {
 /* ---------- 完整備份與還原 ---------- */
 async function buildBackup() {
     records = await loadRecords();
-    return { format: BACKUP_FORMAT, version: 1, createdAt: new Date().toISOString(), banks: Object.values(userBankData), combos: userCombos, records: packRecords() };
+    return { format: BACKUP_FORMAT, version: 1, createdAt: new Date().toISOString(), banks: Object.values(userBankData), combos: userCombos, builtinCorrections, records: packRecords() };
 }
 async function createBackup() {
     const data = await buildBackup();
@@ -257,6 +273,14 @@ async function restoreBackup(data) {
         combos++;
     }
     if (combos) { await saveUserData(); msgs.push(`組合：還原 ${combos} 個`); }
+    // 內建題庫的修正：以備份為準，逐題庫取代
+    const fixes = Object.entries(data.builtinCorrections || {}).filter(([id, t]) => banks[id] && banks[id].builtin && t && Array.isArray(t.rows));
+    if (fixes.length) {
+        for (const [id, t] of fixes) builtinCorrections[id] = t;
+        await idb('readwrite', s => s.put(builtinCorrections, BUILTIN_CORRECTIONS_KEY));
+        notifyChanged('banks');
+        msgs.push(`內建題庫的修正：還原 ${fixes.reduce((n, [, t]) => n + t.rows.length, 0)} 筆`);
+    }
     if (data.records) msgs.push(await importRecords(data.records));
     await reloadBanks();
     renderAll();
@@ -283,9 +307,11 @@ function renderBanks() {
         const main = el('div', 'item-main');
         main.append(el('div', 'item-title', `${bank.name}（${bank.key} ・ ${bank.year || '未設定年份'}）`),
             el('div', 'item-sub', `${bank.id} ・ ${questions.length} 題 ・ 有作答紀錄 ${recordCount(bank.id)} 題 ・ ${builtin ? '內建' : '匯入'}${bank.source ? ` ・ 來源 ${bank.source}` : ''}`));
+        const fix = el('button', 'btn light small', '修正題目');
+        fix.onclick = () => openCorrection(bank.id);
         const exp = el('button', 'btn light small', '匯出');
         exp.onclick = () => exportBank(bank.id);
-        row.append(main, exp);
+        row.append(main, fix, exp);
         if (!builtin) {
             const del = el('button', 'btn light small', '刪除');
             del.onclick = () => onDeleteBank(bank.id);
@@ -327,8 +353,16 @@ function renderOrphans() {
     $('m-orphans-card').hidden = !ids.length;
     $('m-orphans').textContent = ids.length ? `共 ${ids.length} 題：${ids.slice(0, 30).join('、')}${ids.length > 30 ? '…' : ''}` : '';
 }
+function renderConflicts() {
+    const box = $('m-conflicts');
+    box.hidden = !correctionConflicts.length;
+    box.textContent = correctionConflicts.length
+        ? `內建題庫更新後，有 ${correctionConflicts.length} 處和你的修正對不上，目前沿用你的修正：` + correctionConflicts.map(c => `${c.bankId} 流水號 ${c.seq}（${c.field}）`).join('、')
+        : '';
+}
 function renderAll() {
     renderBackupStatus();
+    renderConflicts();
     renderBanks();
     renderCombos();
     renderOrphans();
@@ -336,6 +370,7 @@ function renderAll() {
 
 async function init() {
     await reloadAll();
+    initPdf();
     $('m-backup').onclick = () => createBackup().then(() => showResult('已下載完整備份。'));
     $('m-import').onclick = () => $('m-import-file').click();
     $('m-import-file').onchange = async e => {

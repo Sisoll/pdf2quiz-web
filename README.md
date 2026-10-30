@@ -11,6 +11,8 @@
 3. **題目總覽**：依條件列出題目，可排序、分頁、一鍵顯示 / 隱藏答案。
 4. **模擬考**：各科隨機抽題（預設各 50 題）、限時，作答中不顯示答案，交卷後看各科分數與檢討。
 5. **題庫管理**（頁首的「題庫管理」，`manage.html`）：匯入、匯出、刪除題庫，把幾份題庫建成組合，以及「完整備份」（題庫、組合、作答紀錄一起匯出）與還原。匯入的題庫只存在這個瀏覽器裡，之後還想用請記得完整備份。
+6. **從 PDF 建立題庫**（題庫管理頁）：選擇 PDF 後會自動試過內建樣板、挑解析得最好的一個，可以預覽、看檢查結果（無法解析的段落、題號跳號或重複、題目重複）、手動修正或把無法解析的段落整理成題目，填上類別 key、名稱、年份就建立完成。目前只支援單選題，不支援掃描檔。PDF 取出的文字有問題時，可以改用 Python 取文字：`uv run --with pdfplumber python tools/extract_text.py 檔名.pdf > 檔名.txt`，再用「匯入 Python 取出的文字」。
+7. **修正題目**（題庫管理頁，每份題庫的「修正題目」）：內建題庫的修正存在這個瀏覽器裡（完整備份會一起帶走），題庫檔本身不變；修正答案不會重新判定過去的作答。
 
 ## 作答紀錄與同步
 
@@ -66,6 +68,10 @@ node tools/verify-banks.js        # 逐題比對 banks/ 和 questions.json
 | `js/exam.js` | 模擬考 |
 | `js/main.js` | 啟動、分頁切換、快捷鍵 |
 | `manage.html`、`js/manage.js` | 題庫管理頁 |
+| `js/manage-pdf.js` | 從 PDF 建立題庫、修正題目 |
+| `js/pdftext.js` | 用 pdf.js 從 PDF 取出文字行 |
+| `js/templates.js`、`templates/index.js` | 拆題引擎與內建樣板 |
+| `vendor/pdfjs/` | pdf.js 3.11.174（Apache-2.0，見該資料夾的 LICENSE） |
 | `parse_pdf.py` | PDF 轉 `questions.json`（舊流程） |
 | `tools/` | 題庫轉換與驗證腳本 |
 | `plans/` | 規劃文件 |

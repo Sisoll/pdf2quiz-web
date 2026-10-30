@@ -7,6 +7,10 @@ const USER_COMBOS_KEY = 'userCombos';   // IndexedDB：使用者建立的組合 
 let banks = {};        // 題庫 id → { bank, questions, builtin }
 let userBankData = {}; // 使用者匯入的題庫原始內容（匯出、備份用）
 let userCombos = [];
+const BUILTIN_CORRECTIONS_KEY = 'builtinCorrections';   // IndexedDB：使用者對內建題庫的修正 { 題庫 id: { columns, rows } }
+const CORRECTION_COLUMNS = ['seq', 'field', 'from', 'to', 'note'];
+let builtinCorrections = {};
+let correctionConflicts = [];   // 內建題庫更新後，和使用者修正對不上的項目 [{ bankId, seq, field }]
 
 /* ---------- 欄位式表格 { columns, rows } ----------
    依欄位名稱對應，不依位置：不認得的欄位忽略，缺少的欄位是 undefined */
@@ -50,6 +54,20 @@ async function loadBanks() {
         if (!banks[id]) banks[id] = { ...unpackBank(data), builtin: false };
     }
     try { userCombos = (await idb('readonly', s => s.get(USER_COMBOS_KEY))) || []; } catch { userCombos = []; }
+    try { builtinCorrections = (await idb('readonly', s => s.get(BUILTIN_CORRECTIONS_KEY))) || {}; } catch { builtinCorrections = {}; }
+    correctionConflicts = [];
+    for (const [bankId, t] of Object.entries(builtinCorrections)) if (banks[bankId] && banks[bankId].builtin) applyCorrections(banks[bankId], tableRows(t));
+}
+/* 套上使用者對內建題庫的修正：內建題庫的值等於修正前的值才套用；已經等於修正後的值表示 repo 已修好，不用再套；
+   兩者都不是時（內建題庫改成了第三種值）先沿用使用者的修正，並記下衝突提示使用者 */
+const sameValue = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function applyCorrections(entry, rows) {
+    for (const c of rows) {
+        const q = entry.questions.find(x => x.seq === c.seq);
+        if (!q || !['question', 'options', 'answer'].includes(c.field) || sameValue(q[c.field], c.to)) continue;
+        if (!sameValue(q[c.field], c.from)) correctionConflicts.push({ bankId: entry.bank.id, seq: c.seq, field: c.field });
+        q[c.field] = c.to;
+    }
 }
 function unpackBank(data) {
     const bank = data.bank;

@@ -1,6 +1,6 @@
 # 題庫管理規劃：任意 PDF 轉成題庫
 
-> 狀態：第 0 步（技術驗證）已完成（只驗證 Chrome）；第 1、2 步已實作（2026-10-30，尚未 commit；`questions.js`、`questions.json` 先保留）；第 3 步以後尚未實作。
+> 狀態：第 0 步（技術驗證）已完成（只驗證 Chrome）；第 1、2 步已實作並 commit（分支 `question-bank-manager`）；第 3 步已實作（尚未 commit）；第 4 步以後尚未實作。`questions.js`、`questions.json` 先保留。
 > 所有待決定事項都已決定，見「決定紀錄」。
 
 ## 目標

@@ -34,8 +34,53 @@
     </div>
 
     <div class="card">
+        <h1 class="card-title">從 PDF 建立題庫</h1>
+        <div class="footer-actions">
+            <button class="btn" id="p-pdf">選擇 PDF</button>
+            <button class="btn light" id="p-text">匯入 Python 取出的文字</button>
+            <input type="file" id="p-pdf-file" accept=".pdf,application/pdf" hidden>
+            <input type="file" id="p-text-file" accept=".txt,text/plain" hidden>
+        </div>
+        <div class="hint">選擇 PDF 後會自動試過所有樣板，挑解析得最好的一個；也可以自己換樣板。PDF 取出的文字有問題（例如中文斷行或順序亂掉）而且電腦上有 Python 時，可以改用：<code>uv run --with pdfplumber python tools/extract_text.py 檔名.pdf &gt; 檔名.txt</code>，再用「匯入 Python 取出的文字」。目前只支援單選題；掃描檔（只有圖片）不支援。</div>
+        <div class="manage-result" id="p-result"></div>
+        <div id="p-work" hidden>
+            <div class="manage-result" id="p-source"></div>
+            <div class="controls" style="margin-top: 12px">
+                <label>樣板
+                    <select id="p-template"></select>
+                </label>
+            </div>
+            <div class="notice manage-result" id="p-summary"></div>
+            <div id="p-problems" class="item-list"></div>
+            <div class="browse-head">
+                <span class="browse-count">預覽</span>
+                <label class="browse-sort">從第幾題開始
+                    <input type="number" id="p-jump" min="1" placeholder="1">
+                </label>
+            </div>
+            <div id="p-preview" class="browse-list"></div>
+            <h2 class="card-title small">題庫資訊</h2>
+            <div class="controls">
+                <label>類別 key
+                    <input type="text" id="p-key" maxlength="6" placeholder="例如 INS">
+                </label>
+                <label>名稱
+                    <input type="text" id="p-name">
+                </label>
+                <label>年份（西元，可留空）
+                    <input type="text" id="p-year" maxlength="4" placeholder="例如 2025">
+                </label>
+            </div>
+            <div class="hint" id="p-key-hint"></div>
+            <div class="start-row"><button class="btn" id="p-create">建立題庫</button></div>
+        </div>
+    </div>
+
+    <div class="card">
         <h1 class="card-title">題庫</h1>
+        <div class="notice warn" id="m-conflicts" hidden></div>
         <div id="m-banks" class="item-list"></div>
+        <div id="m-correct"></div>
     </div>
 
     <div class="card">
@@ -71,8 +116,12 @@
 <script src="banks/index.js"></script>
 <script src="js/config.js"></script>
 <script src="js/banks.js"></script>
+<script src="templates/index.js"></script>
+<script src="js/templates.js"></script>
+<script src="js/pdftext.js"></script>
 <script src="js/scoring.js"></script>
 <script src="js/store.js"></script>
 <script src="js/manage.js"></script>
+<script src="js/manage-pdf.js"></script>
 </body>
 </html>
