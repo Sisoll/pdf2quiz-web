@@ -10,6 +10,7 @@
 2. **練習**：設定科目、分數區間、條件、順序與題數，按「開始」出題。答完選 EASY / MEDIUM / HARD 會直接進下一題；點錯可以按「復原」。也可以標記「加強複習」或「暫停複習」。
 3. **題目總覽**：依條件列出題目，可排序、分頁、一鍵顯示 / 隱藏答案。
 4. **模擬考**：各科隨機抽題（預設各 50 題）、限時，作答中不顯示答案，交卷後看各科分數與檢討。
+5. **題庫管理**（頁首的「題庫管理」，`manage.html`）：匯入、匯出、刪除題庫，把幾份題庫建成組合，以及「完整備份」（題庫、組合、作答紀錄一起匯出）與還原。匯入的題庫只存在這個瀏覽器裡，之後還想用請記得完整備份。
 
 ## 作答紀錄與同步
 
@@ -18,21 +19,26 @@
 - 兩台電腦（或電腦與手機）各自練習時：在一台「匯出 JSON」，到另一台按「**合併匯入**」。作答歷程以「時間 + 選項」辨識，重複匯入同一份檔案不會變成重複資料。
 - 「取代匯入」會用檔案蓋掉目前的紀錄，只在想完全換成另一份紀錄時使用。
 - 匯出 CSV 可以用 Excel 分析。
+- 舊版的紀錄檔（題目 id 像 `ETH-0001`）可以直接開啟或匯入，會自動轉成新的題目 id，作答歷程、標記與分數都不變；轉換前的原始紀錄會在瀏覽器裡另存一份。
+- 紀錄只存在瀏覽器裡：清除瀏覽器資料、換電腦或換瀏覽器就看不到，需要保留時請匯出或連結紀錄檔。
 
-## 重新產生題庫
+## 題庫
 
-題庫來源放在 `source/`，執行以下指令會產生 `questions.json` 與 `questions.js`：
+內建兩份題庫，預設以組合「金融證照（113 年）」一起練習，也可以在「題庫」選單只選其中一份：
+
+| 題庫 id | 科目 | 題數 |
+|---|---|---|
+| `ETH-2024-NX89` | 職業道德 | 616 |
+| `MKT-2024-8MYQ` | 金融市場常識 | 504 |
+
+題庫檔在 `banks/`，由 `questions.json` 轉換產生（`banks/index.js` 固定了題庫 id，不能刪除）：
 
 ```
-uv run --with pdfplumber python parse_pdf.py
+node tools/convert-questions.js   # 產生 banks/
+node tools/verify-banks.js        # 逐題比對 banks/ 和 questions.json
 ```
 
-或先安裝 Python 與 pdfplumber：
-
-```
-python -m pip install pdfplumber
-python parse_pdf.py
-```
+`questions.json` 原本由 `parse_pdf.py` 從 `source/` 的 PDF 產生（`uv run --with pdfplumber python parse_pdf.py`）。注意 ETH 第 279 題的答案經過人工修正（PDF 印的是 1，正確是 4），重新解析 PDF 會蓋掉這個修正；修正紀錄在題庫檔的 `corrections`。之後改由題庫管理頁從 PDF 建立題庫，規劃見 `plans/question-bank-manager.md`。
 
 ## 計分規則
 
@@ -49,7 +55,9 @@ python parse_pdf.py
 |---|---|
 | `index.html` | 頁面結構 |
 | `css/style.css` | 樣式 |
+| `banks/` | 內建題庫與清單（由 `tools/convert-questions.js` 產生） |
 | `js/config.js` | 計分規則、隨機加權、出題條件 |
+| `js/banks.js` | 載入題庫、題庫與組合的選擇、舊題目 id 轉換 |
 | `js/scoring.js` | 依作答歷程重算分數 |
 | `js/store.js` | 作答紀錄、設定、紀錄檔、匯出匯入 |
 | `js/filters.js` | 篩選條件與統計 |
@@ -57,7 +65,10 @@ python parse_pdf.py
 | `js/browse.js` | 題目總覽 |
 | `js/exam.js` | 模擬考 |
 | `js/main.js` | 啟動、分頁切換、快捷鍵 |
-| `parse_pdf.py` | PDF 轉題庫 |
+| `manage.html`、`js/manage.js` | 題庫管理頁 |
+| `parse_pdf.py` | PDF 轉 `questions.json`（舊流程） |
+| `tools/` | 題庫轉換與驗證腳本 |
+| `plans/` | 規劃文件 |
 | `tests/` | 端對端測試 |
 
 ## 測試

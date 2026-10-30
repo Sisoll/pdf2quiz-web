@@ -9,6 +9,7 @@ function inScoreRange(r) {
 function test(r, key) {
     switch (key) {
         case 'new': return r.correct + r.wrong === 0;
+        case 'answered': return r.correct + r.wrong > 0;
         case 'mastered': return isMastered(r);
         case 'everWrong': return r.wrong > 0;
         case 'review': return !!r.review;
@@ -19,7 +20,7 @@ function test(r, key) {
 }
 /* 科目與分數區間：括號內題數的計算範圍 */
 function inScope(q) {
-    if (settings.category !== 'all' && q.category !== settings.category) return false;
+    if (settings.category !== 'all' && q.categoryKey !== settings.category) return false;
     return inScoreRange(peek(q.id));
 }
 /* 出題規則：符合任一個「包含」（沒勾就是全部），且不符合任何「排除」 */
@@ -102,7 +103,7 @@ function renderChips() {
 
 function renderStats() {
     renderChips();
-    const scope = allQuestions.filter(q => settings.category === 'all' || q.category === settings.category);
+    const scope = allQuestions.filter(q => settings.category === 'all' || q.categoryKey === settings.category);
     let done = 0, mastered = 0, review = 0, noReview = 0, easy = 0, medium = 0, hard = 0, correct = 0, wrong = 0;
     for (const q of scope) {
         const r = peek(q.id);

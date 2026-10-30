@@ -17,6 +17,7 @@
                 <div class="brand-sub">金融市場常識 ・ 職業道德</div>
             </div>
         </div>
+        <a class="btn light small header-link" href="manage.html">題庫管理</a>
         <nav class="tabs" id="tabs">
             <button class="tab on" data-view="quiz">練習</button>
             <button class="tab" data-view="browse">題目總覽</button>
@@ -27,6 +28,9 @@
     <div class="card" id="setup">
         <h1 class="card-title">出題設定</h1>
         <div class="controls">
+            <label>題庫
+                <select id="f-source"></select>
+            </label>
             <label>科目
                 <select id="f-category"></select>
             </label>
@@ -201,9 +205,10 @@
     </div>
 </div>
 
-<!-- 題庫由 parse_pdf.py 產生 -->
-<script src="questions.js"></script>
+<!-- 內建題庫清單與題庫檔由 tools/convert-questions.js 產生 -->
+<script src="banks/index.js"></script>
 <script src="js/config.js"></script>
+<script src="js/banks.js"></script>
 <script src="js/scoring.js"></script>
 <script src="js/store.js"></script>
 <script src="js/filters.js"></script>

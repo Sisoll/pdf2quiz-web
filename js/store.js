@@ -19,24 +19,45 @@ function unpackHistory(a) {
     if (a[4] === 'x') h.src = 'exam';
     return h;
 }
-/* 分數、答對次數等算得出來的欄位不存，載入時重算；標記只在有值時才存 */
+/* ---------- 版本 4：欄位式格式 ----------
+   作答紀錄依題庫分組，每題一列、只寫流水號；題目 id 不符合「題庫 id + 流水號」的（例如對不到題庫的舊 id）放在 other，原樣保留
+   分數、答對次數等算得出來的欄位不存，載入時重算 */
+const RECORDS_FORMAT = 'pdf2quiz-records';
+const ITEM_COLUMNS = ['h', 'review', 'noReview', 'markAt', 'base'];
+const EXAM_COLUMNS = ['at', 'durationMs', 'timeUp', 'passScore', 'pass', 'recorded', 'subjects'];
+const SUBJECT_COLUMNS = ['category', 'n', 'correct', 'score'];
 function packRecords(data = records) {
-    const items = {};
+    const byBank = {}, other = [];
     for (const [id, r] of Object.entries(data.items)) {
-        const o = { h: r.history.map(packHistory) };
-        if (r.base) o.base = r.base;
-        if (r.review) o.review = true;
-        if (r.noReview) o.noReview = true;
-        if (r.markAt) o.markAt = r.markAt;
-        if (o.h.length || Object.keys(o).length > 1) items[id] = o;   // 完全沒有資料的題目不存
+        const o = { h: r.history.map(packHistory), review: r.review ? 1 : 0, noReview: r.noReview ? 1 : 0, markAt: r.markAt || null, base: r.base || null };
+        if (!o.h.length && !o.review && !o.noReview && !o.markAt && !o.base) continue;   // 完全沒有資料的題目不存
+        const k = splitQid(id);
+        if (k) (byBank[k.bankId] = byBank[k.bankId] || []).push({ seq: k.seq, ...o });
+        else other.push({ id, ...o });
     }
-    return { version: RECORD_VERSION, updatedAt: data.updatedAt, items, exams: data.exams || [] };
+    const banksOut = {};
+    for (const id of Object.keys(byBank).sort()) banksOut[id] = toTable(['seq', ...ITEM_COLUMNS], byBank[id].sort((a, b) => a.seq - b.seq));
+    const exams = (data.exams || []).map(x => ({ ...x, subjects: toTable(SUBJECT_COLUMNS, x.subjects || []) }));
+    const out = { format: RECORDS_FORMAT, version: RECORD_VERSION, updatedAt: data.updatedAt, banks: banksOut, exams: toTable(EXAM_COLUMNS, exams) };
+    if (other.length) out.other = toTable(['id', ...ITEM_COLUMNS], other);
+    return out;
 }
+/* 版本 4 轉回 { items, exams }，之後和舊版走同一條轉換流程 */
+function unpackRecords(data) {
+    const items = {};
+    const item = row => ({ h: row.h || [], review: !!row.review, noReview: !!row.noReview, markAt: row.markAt || null, ...(row.base ? { base: row.base } : {}) });
+    for (const [bankId, t] of Object.entries(data.banks || {})) for (const row of tableRows(t)) items[qid(bankId, row.seq)] = item(row);
+    for (const row of tableRows(data.other)) items[row.id] = item(row);
+    const exams = tableRows(data.exams).map(x => ({ ...x, subjects: Array.isArray(x.subjects) ? x.subjects : tableRows(x.subjects) }));
+    return { version: data.version, updatedAt: data.updatedAt, items, exams };
+}
+const isRecordData = data => !!data && (data.format === RECORDS_FORMAT || typeof data.items === 'object');
 
 /* ---------- 瀏覽器端儲存（IndexedDB） ----------
    localStorage 每個網站只有約 5 MB，紀錄多了會存不進去，所以改存 IndexedDB。
    舊版存在 localStorage 的紀錄會在載入時搬過來，存檔成功後刪掉；IndexedDB 不能用時才退回 localStorage */
 const RECORDS_IDB_KEY = 'records';
+const RECORDS_BACKUP_KEY = 'records-backup-before-v4';   // 轉成版本 4 之前的原始紀錄，只存第一次的
 let legacyPending = false;   // localStorage 裡還有舊資料，等 IndexedDB 存檔成功後刪除
 let browserWriting = Promise.resolve();
 let saveWarned = false;
@@ -45,10 +66,20 @@ async function loadRecords() {
     let data = null, legacy = null;
     try { data = await idb('readonly', s => s.get(RECORDS_IDB_KEY)); } catch {}
     try { legacy = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch {}
-    if (!legacy || typeof legacy.items !== 'object') return migrateRecords(data || emptyRecords());
+    await backupBeforeV4(data, legacy);
+    if (!isRecordData(legacy)) return normalizeRecords(data || emptyRecords());
     legacyPending = true;
     // 兩邊都有資料時合併，不會蓋掉任何一邊
     return data ? mergeRecordSets(normalizeRecords(data), normalizeRecords(legacy)) : normalizeRecords(legacy);
+}
+/* 轉換格式前先把原始紀錄另存一份；已經有備份時不覆蓋 */
+async function backupBeforeV4(data, legacy) {
+    const old = [data, legacy].filter(d => d && d.format !== RECORDS_FORMAT && typeof d.items === 'object' && Object.keys(d.items).length);
+    if (!old.length) return;
+    try {
+        if (await idb('readonly', s => s.get(RECORDS_BACKUP_KEY))) return;
+        await idb('readwrite', s => s.put({ savedAt: new Date().toISOString(), records: old }, RECORDS_BACKUP_KEY));
+    } catch (e) { console.warn('無法備份舊紀錄', e); }
 }
 /* 依呼叫順序寫入，避免較舊的內容蓋掉較新的 */
 function saveToBrowser() {
@@ -70,6 +101,7 @@ function warnSaveFailed(e) {
 }
 /* 舊版紀錄：題目層級的難度改記到最近一次作答上，再用新公式重算 */
 function migrateRecords(data) {
+    if (data && data.format === RECORDS_FORMAT) data = unpackRecords(data);
     if (!data || typeof data.items !== 'object') return emptyRecords();
     // 精簡格式（版本 3）轉回程式內部用的物件格式
     for (const r of Object.values(data.items)) {
@@ -91,15 +123,47 @@ function migrateRecords(data) {
         r.noReview = !!r.noReview && !r.review;   // 兩個標記不會同時存在
         recompute(r);
     }
-    return data;
+    return convertLegacyIds(data);
+}
+/* 舊版題目 id（ETH-0001）換成新 id；新舊 id 同時存在時合併，同一筆作答不會變成兩筆 */
+function convertLegacyIds(data) {
+    const moved = {};
+    for (const id of Object.keys(data.items)) {
+        const to = convertLegacyId(id);
+        if (!to) continue;
+        moved[to] = data.items[id];
+        delete data.items[id];
+    }
+    if (!Object.keys(moved).length) return data;
+    const merged = mergeRecordSets({ items: data.items, exams: data.exams || [] }, { items: moved, exams: [] });
+    merged.updatedAt = data.updatedAt;
+    return merged;
 }
 function saveRecords() {
     records.updatedAt = new Date().toISOString();
-    saveToBrowser();
+    saveToBrowser().then(() => notifyChanged('records'));
     scheduleFileWrite();
 }
+
+/* ---------- 多個分頁同時開著 ----------
+   一個分頁改了題庫或作答紀錄（寫進 IndexedDB 之後），用 localStorage 的 storage 事件通知其他分頁重新讀取
+   kind：'records' 作答紀錄、'banks' 題庫或組合 */
+const CHANGED_KEY = 'pdf2quiz-changed';
+const TAB_ID = Math.random().toString(36).slice(2);
+function notifyChanged(kind) {
+    try { localStorage.setItem(CHANGED_KEY, JSON.stringify({ kind, from: TAB_ID, at: Date.now() })); } catch {}
+}
+function onDataChanged(fn) {
+    window.addEventListener('storage', e => {
+        if (e.key !== CHANGED_KEY || !e.newValue) return;
+        try {
+            const m = JSON.parse(e.newValue);
+            if (m.from !== TAB_ID) fn(m.kind);
+        } catch {}
+    });
+}
 function loadSettings() {
-    const defaults = { category: 'all', include: [], exclude: ['noReview'], order: 'seq', limit: '', threshold: DEFAULT_THRESHOLD, min: '', max: '', browseSort: 'num', showAnswers: false, scoringVersion: 2 };
+    const defaults = { source: '', category: 'all', include: [], exclude: ['noReview'], order: 'seq', limit: '', threshold: DEFAULT_THRESHOLD, min: '', max: '', browseSort: 'num', showAnswers: false, scoringVersion: 2 };
     let s;
     try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { s = {}; }
     // 舊版的單選「題目範圍」轉成「包含」
@@ -196,6 +260,7 @@ async function writeFile() {
 }
 /* 匯入或讀檔共用；記住門檻目前固定，不沿用檔案裡的值 */
 function normalizeRecords(data) {
+    if (data.format === RECORDS_FORMAT) data = unpackRecords(data);
     return migrateRecords({ version: data.version || 1, items: data.items || {}, exams: Array.isArray(data.exams) ? data.exams : [], updatedAt: data.updatedAt });
 }
 /* 取代：直接用檔案的紀錄 */
@@ -254,7 +319,7 @@ async function readFileInto(handle) {
     const text = await (await handle.getFile()).text();
     if (!text.trim()) return false;           // 空檔：保留目前紀錄並寫入
     const data = JSON.parse(text);
-    if (!data || typeof data.items !== 'object') throw new Error('不是本程式的紀錄檔');
+    if (!isRecordData(data)) throw new Error('不是本程式的紀錄檔');
     // 開啟紀錄檔時和瀏覽器裡的紀錄合併，不會蓋掉任何一邊
     mergeInto(data);
     await saveToBrowser();
@@ -354,9 +419,9 @@ function importJson(file, mode) {
     reader.onload = () => {
         try {
             const data = JSON.parse(reader.result);
-            if (!data || typeof data.items !== 'object') throw new Error('格式不符');
+            if (!isRecordData(data)) throw new Error('格式不符');
             if (mode === 'replace') {
-                if (!confirm(`要用這個檔案「取代」目前的作答紀錄嗎？目前瀏覽器裡的紀錄會被蓋掉。（檔案內有 ${Object.keys(data.items).length} 題的紀錄）`)) return;
+                if (!confirm(`要用這個檔案「取代」目前的作答紀錄嗎？目前瀏覽器裡的紀錄會被蓋掉。（檔案內有 ${Object.keys(normalizeRecords(data).items).length} 題的紀錄）`)) return;
                 adoptRecords(data);
                 saveRecords(); resetView();
                 alert('已用檔案取代目前的作答紀錄。');

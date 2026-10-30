@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF Quiz Wizard - 題庫管理</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body class="manage">
+<div class="wrap">
+
+    <header class="app-header">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true">Q</div>
+            <div>
+                <div class="brand-title">題庫管理</div>
+                <div class="brand-sub">匯入、匯出、組合題庫與完整備份</div>
+            </div>
+        </div>
+        <a class="btn light small header-link" href="index.html">回到測驗</a>
+    </header>
+
+    <div class="card">
+        <h1 class="card-title">資料保存</h1>
+        <div class="notice" id="m-backup-status"></div>
+        <div class="hint">匯入的題庫、組合與作答紀錄只存在這個瀏覽器裡，不會上傳到任何地方。清除瀏覽器資料、使用無痕視窗、換電腦或換瀏覽器就會看不到；Safari 也可能自動清除一段時間沒開啟的網站資料。之後還想用的話，請用「完整備份」把題庫和作答紀錄一起匯出。</div>
+        <div class="footer-actions" style="margin-top: 12px">
+            <button class="btn" id="m-backup">完整備份</button>
+            <button class="btn light" id="m-import">匯入檔案</button>
+            <input type="file" id="m-import-file" accept=".json,application/json" hidden>
+        </div>
+        <div class="hint">「匯入檔案」可以讀：題庫檔（.quizbank.json）、完整備份檔、作答紀錄檔（新舊格式都可以，會合併），以及舊版的題庫 questions.json。</div>
+        <div class="manage-result" id="m-result"></div>
+    </div>
+
+    <div class="card">
+        <h1 class="card-title">題庫</h1>
+        <div id="m-banks" class="item-list"></div>
+    </div>
+
+    <div class="card">
+        <h1 class="card-title">組合</h1>
+        <div class="hint" style="margin-top: 0">把幾份題庫合在一起練習。同一個類別 key 的題庫在組合裡算同一科。</div>
+        <div id="m-combos" class="item-list"></div>
+        <h2 class="card-title small">建立組合</h2>
+        <div class="controls">
+            <label>名稱
+                <input type="text" id="c-name" placeholder="例如：金融證照（全部）">
+            </label>
+            <label>模擬考各科題數
+                <input type="number" id="c-per" min="1" value="50">
+            </label>
+            <label>每科及格分數
+                <input type="number" id="c-pass" min="0" max="100" value="70">
+            </label>
+            <label>時間（分鐘）
+                <input type="number" id="c-minutes" min="0" value="60">
+            </label>
+        </div>
+        <div class="bank-picks" id="c-banks"></div>
+        <div class="start-row"><button class="btn" id="c-create">建立組合</button></div>
+    </div>
+
+    <div class="card card-muted" id="m-orphans-card" hidden>
+        <h2 class="card-title small">對不到題庫的作答紀錄</h2>
+        <div class="hint" style="margin-top: 0">這些紀錄的題目目前不在任何題庫裡（例如題庫被刪除了）。紀錄會一直保留，之後匯入同一份題庫就會自動接回。</div>
+        <div id="m-orphans" class="item-sub"></div>
+    </div>
+</div>
+
+<script src="banks/index.js"></script>
+<script src="js/config.js"></script>
+<script src="js/banks.js"></script>
+<script src="js/scoring.js"></script>
+<script src="js/store.js"></script>
+<script src="js/manage.js"></script>
+</body>
+</html>

@@ -1,22 +1,29 @@
 /* 模擬考：各科隨機抽題（不加權）、限時、作答中不顯示答案，交卷後評分 */
-const EXAM_HISTORY_LIMIT = 30;
 let exam = null;          // 考試中：{ items: [{ q, pick }], idx, startedAt, endsAt, timer, cfg }
 let examResult = null;    // 最近一次交卷的結果，給結果頁用
 let examReviewWrongOnly = false;
 
 function examCategories() { return [...new Set(allQuestions.map(q => q.category))]; }
 
-function initExam() {
+/* 各科題數的輸入框；預設值來自選用組合的模擬考設定 */
+function renderExamCounts() {
+    const cfg = (currentSource && currentSource.exam) || {};
     const box = $('x-counts');
     box.innerHTML = '';
     for (const cat of examCategories()) {
         const total = allQuestions.filter(q => q.category === cat).length;
         const label = el('label', null, `${cat}（共 ${total} 題）`);
-        const input = Object.assign(el('input'), { type: 'number', min: 0, max: total, value: Math.min(50, total) });
+        const input = Object.assign(el('input'), { type: 'number', min: 0, max: total, value: Math.min(cfg.perCategory ?? 50, total) });
         input.dataset.cat = cat;
         label.appendChild(input);
         box.appendChild(label);
     }
+    if (cfg.pass !== undefined) $('x-pass').value = cfg.pass;
+    if (cfg.minutes !== undefined) $('x-time').value = cfg.minutes;
+}
+
+function initExam() {
+    renderExamCounts();
     $('x-start').onclick = startExam;
     $('x-submit').onclick = () => submitExam(false);
     $('x-prev').onclick = () => examGo(exam && exam.idx - 1);

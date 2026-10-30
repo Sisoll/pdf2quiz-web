@@ -20,6 +20,7 @@ function questionTags(r) {
     if (r.correct + r.wrong === 0) {
         tags.push(['new', '未作答']);
     } else {
+        tags.push(['answered', '已作答']);
         if (isMastered(r)) tags.push(['mastered', '已記住']);
         if (r.wrong > 0) tags.push(['everWrong', `答錯 ${r.wrong} 次`]);
         tags.push([r.level, r.level]);
@@ -27,13 +28,6 @@ function questionTags(r) {
     if (r.review) tags.push(['review', '加強複習']);
     if (r.noReview) tags.push(['noReview', '暫停複習']);
     return tags;
-}
-
-function el(tag, className, text) {
-    const e = document.createElement(tag);
-    if (className) e.className = className;
-    if (text !== undefined) e.textContent = text;
-    return e;
 }
 
 function questionCard(q) {

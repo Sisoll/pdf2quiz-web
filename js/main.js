@@ -1,7 +1,8 @@
 /* 全域狀態與初始化（最後載入） */
-const allQuestions = window.QUIZ_DATA || [];
+let allQuestions = [];    // 目前選用的題庫或組合的題目
+let currentSource = null; // 目前選用的題庫或組合
 let settings = loadSettings();
-let records = emptyRecords();   // init() 從 IndexedDB 載入
+let records = emptyRecords();   // init() 載入題庫後從 IndexedDB 載入
 let queue = [];
 let pos = 0;
 let answeredInView = false;
@@ -25,15 +26,39 @@ function setView(v) {
     else renderStats();
 }
 
+/* 換題庫或組合：題目、科目選單、模擬考各科題數跟著換 */
+function applySource(src) {
+    currentSource = src;
+    settings.source = src.id;
+    allQuestions = sourceQuestions(src);
+    const cats = categoryList(allQuestions);
+    // 舊版設定存的是科目名稱，換成類別 key
+    const byName = cats.find(c => c.name === settings.category);
+    if (byName) settings.category = byName.key;
+    if (!cats.some(c => c.key === settings.category)) settings.category = 'all';
+    $('f-category').innerHTML = '<option value="all">全部科目</option>' + cats.map(c => `<option value="${c.key}">${c.name}</option>`).join('');
+    $('f-category').value = settings.category;
+    document.querySelector('.brand-sub').textContent = cats.map(c => c.name).join(' ・ ');
+    renderExamCounts();
+}
+function onSourceChanged() {
+    if (session || exam) { $('f-source').value = currentSource.id; return; }
+    applySource(findSource($('f-source').value));
+    saveSettings();
+    resetView();
+}
+
 async function init() {
-    records = await loadRecords();
-    if (!allQuestions.length) {
-        $('question').textContent = '找不到題庫。請先執行 parse_pdf.py 產生 questions.js。';
+    await loadBanks();
+    const src = findSource(settings.source);
+    if (!src) {
+        $('question').textContent = '找不到題庫。請確認 banks/ 資料夾裡有題庫檔。';
         return;
     }
-    const cats = [...new Set(allQuestions.map(q => q.category))];
-    $('f-category').innerHTML = '<option value="all">全部科目</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-    $('f-category').value = cats.includes(settings.category) ? settings.category : 'all';
+    records = await loadRecords();
+    $('f-source').innerHTML = sourceList().map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    $('f-source').value = src.id;
+    applySource(src);
     $('f-order').value = settings.order;
     $('f-threshold').value = settings.threshold;
     $('f-min').value = settings.min;
@@ -44,6 +69,7 @@ async function init() {
     buildChips();
     initBrowse();
     initExam();
+    $('f-source').onchange = onSourceChanged;
     $('undo-btn').onclick = undoAnswer;
     document.querySelectorAll('#tabs .tab').forEach(t => { t.onclick = () => setView(t.dataset.view); });
 
@@ -94,6 +120,20 @@ async function init() {
     readFilters();
     render();        // 先顯示設定畫面，按「開始」才出題
     initRecordFile();
+    onDataChanged(onOtherTabChanged);
+}
+
+/* 其他分頁（例如題庫管理頁）改了資料：作答紀錄直接重新讀取；題庫變了要重新整理頁面，進行中的練習或考試先不打斷 */
+async function onOtherTabChanged(kind) {
+    if (kind === 'records') {
+        records = await loadRecords();
+        lastAnswer = null;   // 紀錄換過了，不能再復原上一筆
+        renderStats();
+        if (view === 'browse') renderBrowse();
+        return;
+    }
+    if (session || exam) { alert('題庫或組合在其他分頁更新了，這一輪結束後請重新整理頁面。'); return; }
+    location.reload();
 }
 
 window.onload = init;

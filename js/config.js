@@ -1,7 +1,8 @@
 /* 常數、計分規則、出題條件與共用小工具 */
 const STORAGE_KEY = 'pdf2quiz-records-v1';   // 舊版存在 localStorage 的位置，現在改存 IndexedDB，只在搬移時讀取
 const SETTINGS_KEY = 'pdf2quiz-settings-v1';
-const RECORD_VERSION = 3;   // 3：精簡格式（作答歷程改用陣列、不存算得出來的欄位）
+const RECORD_VERSION = 4;   // 4：欄位式格式，依題庫分組（3：精簡格式；作答歷程沿用 3 的陣列）
+const EXAM_HISTORY_LIMIT = 30;   // 保留的模擬考成績筆數（合併紀錄時也會用到）
 const HISTORY_LIMIT = 200;   // 每題保留的作答歷史筆數，更早的會濃縮成起始分數
 
 /* ---------- 計分規則 ---------- */
@@ -36,6 +37,7 @@ const RANDOM_WEIGHT = {
 /* 出題條件：每個條件可以是 不限 / 包含 / 排除 */
 const CONDITIONS = [
     { key: 'new', label: '未作答', group: '進度' },
+    { key: 'answered', label: '已作答', group: '進度' },
     { key: 'mastered', label: '已記住', group: '進度' },
     { key: 'everWrong', label: '曾經答錯', group: '進度' },
     { key: 'EASY', label: 'EASY', group: '難度' },
@@ -46,5 +48,11 @@ const CONDITIONS = [
 ];
 
 const $ = id => document.getElementById(id);
+function el(tag, className, text) {
+    const e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text !== undefined) e.textContent = text;
+    return e;
+}
 const round2 = n => Math.round(n * 100) / 100;
 const streakMult = s => SCORING.streak[Math.min(s, SCORING.streak.length) - 1];
