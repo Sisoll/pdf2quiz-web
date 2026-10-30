@@ -11,7 +11,7 @@ function replay(r) {
             h.cool = prevT !== null && t - prevT < SCORING.cooldownMs;
             if (!h.cool) {
                 streak++;
-                score = Math.min(SCORING.cap, score + SCORING.base[h.level || 'MEDIUM'] * streakMult(streak));
+                score = Math.min(SCORING.cap, score + SCORING.base[h.level || 'MEDIUM'] * streakMult(streak) * timeFactor(h.sec));
             }
         } else {
             h.cool = false;

@@ -82,7 +82,7 @@ function buildChips() {
 }
 /* 不限 → 包含 → 排除 → 不限 */
 function cycleChip(key) {
-    if (session) return;
+    if (!endRoundForChange()) return;
     const state = chipState(key);
     settings.include = settings.include.filter(k => k !== key);
     settings.exclude = settings.exclude.filter(k => k !== key);
@@ -106,10 +106,11 @@ function renderStats() {
     renderChips();
     const total = allQuestions.filter(q => settings.category === 'all' || q.categoryKey === settings.category).length;
     const list = allQuestions.filter(matches);
-    const n = { done: 0, mastered: 0, review: 0, noReview: 0, EASY: 0, MEDIUM: 0, HARD: 0, correct: 0, wrong: 0 };
+    const n = { lastOk: 0, done: 0, mastered: 0, review: 0, noReview: 0, EASY: 0, MEDIUM: 0, HARD: 0, correct: 0, wrong: 0 };
     for (const q of list) {
         const r = peek(q.id);
         if (r.correct + r.wrong > 0) n.done++;
+        if (r.last === 'correct') n.lastOk++;
         if (isMastered(r)) n.mastered++;
         if (r.review) n.review++;
         if (r.noReview) n.noReview++;
@@ -117,24 +118,41 @@ function renderStats() {
         n.correct += r.correct; n.wrong += r.wrong;
     }
     const none = list.length - n.EASY - n.MEDIUM - n.HARD;
-    const rate = n.correct + n.wrong ? Math.round(n.correct / (n.correct + n.wrong) * 100) + '%' : '—';
+    // 最近答對率：已作答的題目中，最近一次答對的比例（目前的程度）；歷來答對率：所有作答次數的答對比例
+    const rate = n.done ? Math.round(n.lastOk / n.done * 100) + '%' : '—';
+    const allRate = n.correct + n.wrong ? Math.round(n.correct / (n.correct + n.wrong) * 100) + '%' : '—';
     const pct = v => list.length ? (v / list.length * 100).toFixed(2) + '%' : '0';
-    const stat = (icon, label, value, sub = '') => `<div class="stat"><div class="stat-label">${icon} ${label}</div><b>${value}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+    // 卡片底部的比例條：題數是佔符合題數的比例，答對率就是答對率本身
+    const stat = (icon, label, value, ratio, title = '') => `<div class="stat"${title ? ` title="${title}"` : ''}><span class="stat-icon">${icon}</span><div class="stat-body"><div class="stat-label">${label}</div><b>${value}</b>` +
+        `<div class="stat-bar"><span style="width:${(Math.min(1, ratio || 0) * 100).toFixed(1)}%"></span></div></div></div>`;
+    const of = v => list.length ? v / list.length : 0;
     $('stats').innerHTML =
-        `<div class="stats-head"><span class="stats-main">${ICONS.matched} 符合出題規則 <b>${list.length}</b> <small>/ ${total} 題</small></span>` +
+        `<div class="stats-head"><span class="stats-main">${ICONS.matched} 符合出題規則 <b>${list.length}</b> <small>/ ${total} 題（${ruleText()}）</small></span>` +
         (list.length ? '' : `<span class="stats-note">沒有符合條件的題目</span>`) + `</div>` +
         `<div class="stats-grid">` +
-        stat(ICONS.answered, '已作答', n.done, `${ICONS.new} 未作答 ${list.length - n.done}`) +
-        stat(ICONS.mastered, '已記住', n.mastered) +
-        stat(ICONS.review, '加強複習', n.review, `${ICONS.noReview} 暫停複習 ${n.noReview}`) +
-        stat(ICONS.rate, '累計答對率', rate, `答對 ${n.correct} ・ 答錯 ${n.wrong}`) +
+        stat(ICONS.answered, '已作答', n.done, of(n.done)) +
+        stat(ICONS.new, '未作答', list.length - n.done, of(list.length - n.done)) +
+        stat(ICONS.mastered, '已記住', n.mastered, of(n.mastered)) +
+        stat(ICONS.review, '加強複習', n.review, of(n.review)) +
+        stat(ICONS.noReview, '暫停複習', n.noReview, of(n.noReview)) +
+        stat(ICONS.rate, '最近答對率', rate, n.done && n.lastOk / n.done, `已作答的 ${n.done} 題中，最近一次答對 ${n.lastOk} 題`) +
+        stat(ICONS.history, '歷來答對率', allRate, (n.correct + n.wrong) && n.correct / (n.correct + n.wrong), `所有作答 ${n.correct + n.wrong} 次中，答對 ${n.correct} 次`) +
         `</div>` +
         `<div class="level-bar" aria-hidden="true">` +
         ['EASY', 'MEDIUM', 'HARD'].map(k => `<span class="lv-${k.toLowerCase()}" style="width:${pct(n[k])}"></span>`).join('') +
         `<span class="lv-none" style="width:${pct(none)}"></span></div>` +
         `<div class="level-legend">` +
         ['EASY', 'MEDIUM', 'HARD'].map(k => `<span>${ICONS[k]} ${k} <b>${n[k]}</b></span>`).join('') +
-        `<span>${ICONS.none} 未分級 <b>${none}</b></span></div>`;
+        `<span>${ICONS.none} 未分級（未作答）<b>${none}</b></span></div>`;
+}
+/* 目前的出題規則，例如「包含 已作答；排除 暫停複習；分數 1～8」 */
+function ruleText() {
+    const label = key => CONDITIONS.find(c => c.key === key).label;
+    const parts = [];
+    if (settings.include.length) parts.push(`包含 ${settings.include.map(label).join('、')}`);
+    if (settings.exclude.length) parts.push(`排除 ${settings.exclude.map(label).join('、')}`);
+    if (settings.min !== '' || settings.max !== '') parts.push(`分數 ${settings.min === '' ? '−2' : settings.min}～${settings.max === '' ? SCORING.cap : settings.max}`);
+    return parts.join('；') || '全部題目';
 }
 
 function readThreshold() { return DEFAULT_THRESHOLD; }   // 目前固定，輸入框已停用
@@ -142,6 +160,15 @@ function readRange() {
     let min = $('f-min').value.trim(), max = $('f-max').value.trim();
     if (min !== '' && max !== '' && Number(min) > Number(max)) { [min, max] = [max, min]; $('f-min').value = min; $('f-max').value = max; }
     settings.min = min; settings.max = max;
+}
+/* 把 settings 顯示回畫面（不改設定時還原用） */
+function showFilters() {
+    $('f-source').value = currentSource.id;
+    $('f-category').value = settings.category;
+    $('f-order').value = settings.order;
+    $('f-min').value = settings.min;
+    $('f-max').value = settings.max;
+    $('f-limit').value = settings.limit;
 }
 /* 從畫面讀出條件；包含 / 排除由條件按鈕直接寫進 settings */
 function readFilters() {
@@ -156,7 +183,7 @@ function readFilters() {
 }
 /* 條件改變時只更新題數，不會開始出題 */
 function onFiltersChanged() {
-    if (session) return;
+    if (!endRoundForChange()) return;
     readFilters();
     render();
     if (view === 'browse') renderBrowse(true);

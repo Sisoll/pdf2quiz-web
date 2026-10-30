@@ -42,6 +42,53 @@ describe('計分公式', () => {
         await page.closeContext();
     });
 
+    test('答題速度加權：12～20 秒平均、越快加越多、慢一點稍微扣、超過 60 秒或沒有秒數當成平均', async () => {
+        const page = await openPage();
+        const f = await page.evaluate(() => [undefined, 12, 16, 20, 11, 10, 8, 0.3, 24, 32, 40, 60, 61].map(timeFactor));
+        assert.deepEqual(f, [1, 1, 1, 1, 1.05, 1.1, 1.2, 1.4, 0.95, 0.85, 0.75, 0.7, 1]);
+        const trail = await page.evaluate(() => {
+            const t0 = Date.UTC(2026, 0, 1), hour = 3600e3;
+            const r = { history: [
+                { t: new Date(t0).toISOString(), ok: true, level: 'EASY', sec: 2 },           // 2.5 × 1.4 = 3.5
+                { t: new Date(t0 + hour).toISOString(), ok: true, level: 'MEDIUM', sec: 36 },  // 1.5 × 1.5（連對）× 0.8 = 1.8
+                { t: new Date(t0 + 2 * hour).toISOString(), ok: false, level: 'MEDIUM', sec: 1 },   // 答錯不看速度
+            ] };
+            recompute(r);
+            return r.history.map(h => h.s);
+        });
+        assert.deepEqual(trail, [3.5, 5.3, 1.65]);
+        await page.closeContext();
+    });
+
+    test('練習時記錄作答秒數並顯示加權；存檔、讀檔、合併都保留秒數，舊紀錄格式不變', async () => {
+        const page = await openPage();
+        await page.click('#start-btn');
+        await page.advance(1000);
+        await page.keyboard.press('4');
+        const r = await page.evaluate(() => ({ sec: peek(Q('ETH-0001')).history[0].sec, s: peek(Q('ETH-0001')).score }));
+        assert.ok(r.sec >= 1 && r.sec < 2, `sec=${r.sec}`);
+        assert.equal(r.s, 2.1);                                   // MEDIUM 1.5 × 1.4
+        assert.match(await text(page, '#result'), /用時 1(\.\d)? 秒 ×1\.4/);
+        const packed = await page.evaluate(() => [
+            packHistory({ t: '2026-01-01T00:00:00Z', pick: 2, ok: true, level: 'EASY' }),
+            packHistory({ t: '2026-01-01T00:00:00Z', pick: 2, ok: true, level: 'EASY', src: 'exam' }),
+            packHistory({ t: '2026-01-01T00:00:00Z', pick: 2, ok: true, level: 'EASY', sec: 3.4 }),
+            unpackHistory(packHistory({ t: '2026-01-01T00:00:00Z', pick: 2, ok: true, level: 'EASY', sec: 3.4 })).sec,
+        ]);
+        assert.equal(packed[0].length, 4);
+        assert.deepEqual(packed[1].slice(4), ['x']);
+        assert.deepEqual(packed[2].slice(4), [0, 3.4]);
+        assert.equal(packed[3], 3.4);
+        // 合併：同一筆作答只有一邊有秒數時保留秒數
+        const merged = await page.evaluate(() => {
+            const h = { t: '2026-01-01T00:00:00.000Z', pick: 2, ok: true, level: 'MEDIUM' };
+            const a = { items: { X: { history: [h] } } }, b = { items: { X: { history: [{ ...h, sec: 4 }] } } };
+            return [mergeRecordSets(a, b).items.X.history, mergeRecordSets(b, a).items.X.history].map(x => [x.length, x[0].sec]);
+        });
+        assert.deepEqual(merged, [[1, 4], [1, 4]]);
+        await page.closeContext();
+    });
+
     test('超過保留上限時，答對答錯總數不會少算', async () => {
         const page = await openPage();
         const r = await page.evaluate(() => {
@@ -105,7 +152,7 @@ describe('出題條件', () => {
         assert.equal((await count(page, [], ['MEDIUM'])).length, 1118);
         assert.equal(await page.evaluate(() => peek(Q('ETH-0006')).level), null);
         // 統計只算符合出題規則的題目：預設排除暫停複習，ETH-0005（EASY）不算
-        assert.match(await text(page, '#stats'), /EASY 1\s*🟡 MEDIUM 2\s*🔴 HARD 1\s*⚪ 未分級 1115/);
+        assert.match(await text(page, '#stats'), /EASY 1\s*🟡 MEDIUM 2\s*🔴 HARD 1\s*⚪ 未分級（未作答）1115/);
         await page.closeContext();
     });
 
@@ -114,15 +161,24 @@ describe('出題條件', () => {
         const stats = () => page.evaluate(() => { renderStats(); return $('stats').innerText.replace(/\s+/g, ' '); });
         await page.evaluate(() => { settings.include = ['EASY']; settings.exclude = []; });
         let s = await stats();
-        assert.match(s, /符合出題規則 2 \/ 1120 題/);
+        assert.match(s, /符合出題規則 2 \/ 1120 題（包含 EASY）/);
+        assert.match(s, /最近答對率 100% 📈 歷來答對率 100%/);
+        await page.evaluate(() => { settings.include = ['MEDIUM']; });
+        // ETH-0003 答錯一次（最近一次也是答錯）、ETH-0004 答對兩次：最近 1/2 題，歷來 2/3 次
+        assert.match(await stats(), /最近答對率 50% 📈 歷來答對率 67%/);
+        await page.evaluate(() => { settings.include = ['EASY']; });
         assert.match(s, /已作答 2 🆕 未作答 0/);
         assert.match(s, /加強複習 0 ⏸️ 暫停複習 1/);
-        assert.match(s, /EASY 2 🟡 MEDIUM 0 🔴 HARD 0 ⚪ 未分級 0/);
+        assert.match(s, /EASY 2 🟡 MEDIUM 0 🔴 HARD 0 ⚪ 未分級（未作答）0/);
         await page.evaluate(() => { settings.include = ['new']; $('f-category').value = 'ETH'; readFilters(); });
         s = await stats();
-        assert.match(s, /符合出題規則 611 \/ 616 題/);
+        assert.match(s, /符合出題規則 611 \/ 616 題（包含 未作答）/);
         assert.match(s, /已作答 0 🆕 未作答 611/);
-        assert.match(s, /累計答對率 —/);
+        assert.match(s, /最近答對率 — 📈 歷來答對率 —/);
+        await page.evaluate(() => { settings.include = ['answered']; settings.exclude = ['noReview']; settings.min = '1'; settings.max = ''; });
+        assert.match(await stats(), /（包含 已作答；排除 暫停複習；分數 1～8）/);
+        await page.evaluate(() => { settings.include = []; settings.exclude = []; settings.min = ''; });
+        assert.match(await stats(), /（全部題目）/);
         await page.closeContext();
     });
 
@@ -232,6 +288,17 @@ describe('練習', () => {
         await page.closeContext();
     });
 
+    test('第一次作答的題目不顯示「0（對 0 ・ 錯 0）」，答完才顯示分數', async () => {
+        const page = await openPage({ records: { version: 2, items: { 'ETH-0002': { history: history('OM') } } } });
+        await page.click('#start-btn');
+        assert.equal(await text(page, '#score'), '🆕 第一次作答');
+        await page.keyboard.press('4');
+        assert.match(await text(page, '#score'), /^\+[\d.]+（對 1 ・ 錯 0）$/);
+        await page.keyboard.press('Enter');
+        assert.equal(await text(page, '#score'), '+1.5（對 1 ・ 錯 0）');   // 作答過的題目，作答前照樣顯示分數
+        await page.closeContext();
+    });
+
     test('難度：作答前沒有選取任何難度，答完預設 MEDIUM', async () => {
         const page = await openPage();
         await page.click('#start-btn');
@@ -253,15 +320,107 @@ describe('練習', () => {
         r = await page.evaluate(() => [peek(Q('ETH-0001')).review, peek(Q('ETH-0001')).noReview]);
         assert.deepEqual(r, [false, true]);
         await page.keyboard.press('Escape');
+        await page.click('#round-dialog-skip');           // 中止後詢問要不要檢討：不用
         await page.click('.chip[data-key="noReview"]');   // 取消預設的「排除暫停複習」，這題才會出現
         await page.click('#start-btn');           // 新的一輪：作答前點 × 移除
         await page.click('#noreview-btn');
         assert.equal(await page.evaluate(() => peek(Q('ETH-0001')).noReview), false);
         await page.closeContext();
     });
+
+    test('改設定：測驗中先問要不要結束本輪（結束不顯示成績）；閒置時清掉本輪成績', async () => {
+        const page = await openPage();
+        const changeCategory = v => page.evaluate(v => { const s = $('f-category'); s.value = v; s.dispatchEvent(new Event('change')); }, v);
+        await page.click('#start-btn');
+        await page.keyboard.press('1');
+        await page.keyboard.press('Enter');
+        // 不結束：設定還原，測驗繼續
+        await page.evaluate(() => { window.confirm = () => false; });
+        await changeCategory('ETH');
+        assert.deepEqual(await page.evaluate(() => [!!session, settings.category, $('f-category').value]), [true, 'all', 'all']);
+        await page.click('.chip[data-key="new"]');
+        assert.deepEqual(await page.evaluate(() => [!!session, settings.include]), [true, []]);
+        // 結束：不顯示本輪成績、不詢問檢討，作答紀錄保留
+        await page.evaluate(() => { window.confirm = () => true; });
+        await changeCategory('ETH');
+        assert.deepEqual(await page.evaluate(() => [!!session, settings.category, lastResult, $('round-dialog').open, peek(Q('ETH-0001')).history.length]),
+            [false, 'ETH', null, false, 1]);
+        assert.equal(await text(page, '#category'), '準備開始');
+        // 做完一輪後改設定：本輪成績清掉
+        await page.type('#f-limit', '1');
+        await page.click('#start-btn');
+        await page.keyboard.press('4');
+        await page.keyboard.press('Enter');
+        await page.click('#round-dialog-skip');
+        assert.equal(await text(page, '#category'), '本輪成績');
+        await page.click('.chip[data-key="new"]');
+        assert.equal(await text(page, '#category'), '準備開始');
+        await page.closeContext();
+    });
 });
 
 /* ---------- 題目總覽 ---------- */
+describe('本輪檢討', () => {
+    /* 第 1 題答錯標 HARD、第 2 題答對標加強複習、第 3 題先點錯再復原後答對，然後中止 */
+    async function playRound(page) {
+        await page.click('#start-btn');
+        await page.keyboard.press('1');
+        await page.keyboard.press('h'); await sleep(350);
+        await page.keyboard.press('4');
+        await page.keyboard.press('r');
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('1');
+        await page.keyboard.press('z');
+        await page.keyboard.press('3');
+        await page.keyboard.press('Escape');
+    }
+    const cards = page => page.$$eval('#rr-list .qitem', cs => cs.map(c => [c.querySelector('.num').textContent, c.querySelector('.rr-tries').textContent]));
+
+    test('中止時詢問要不要檢討；選要才顯示，可以切換答錯、加強複習、HARD、全部', async () => {
+        const page = await openPage();
+        await playRound(page);
+        assert.equal(await page.$eval('#round-dialog', d => d.open), true);
+        assert.match(await text(page, '#round-dialog-body'), /本輪作答 3 題：❌ 答錯 1 ・ 📌 加強複習 1 ・ 🔴 HARD 1/);
+        assert.equal(await page.$eval('#round-review', e => e.hidden), true);
+        await page.keyboard.press('Enter');       // 預設聚焦「檢討本輪」；不會開始新的一輪
+        assert.equal(await page.$eval('#round-dialog', d => d.open), false);
+        assert.equal(await page.evaluate(() => session), null);
+        assert.equal(await page.$eval('#round-review', e => e.hidden), false);
+        assert.equal(await page.$eval('#rr-filters .chip.on', e => e.dataset.key), 'wrong');
+        assert.deepEqual(await cards(page), [['第 1 題', '本輪的選擇：選 (1) ✗ HARD　・　正確答案 (4)']]);
+        assert.deepEqual(await page.$$eval('#rr-list .qopts li', ls => ls.map(l => l.className)), ['mine', '', '', 'ans']);
+        await page.click('#rr-filters .chip[data-key="review"]');
+        assert.deepEqual((await cards(page)).map(c => c[0]), ['第 2 題']);
+        await page.click('#rr-filters .chip[data-key="all"]');
+        // 第 3 題點錯後復原，不算在本輪的選擇裡
+        assert.deepEqual(await cards(page), [
+            ['第 1 題', '本輪的選擇：選 (1) ✗ HARD　・　正確答案 (4)'],
+            ['第 2 題', '本輪的選擇：選 (4) ✓ MEDIUM　・　正確答案 (4)'],
+            ['第 3 題', '本輪的選擇：選 (3) ✓ MEDIUM　・　正確答案 (3)'],
+        ]);
+        // 下一輪開始時收起來
+        await page.click('#start-btn');
+        assert.equal(await page.$eval('#round-review', e => e.hidden), true);
+        assert.deepEqual(page.errors, []);
+        await page.closeContext();
+    });
+
+    test('選「不用」就不顯示，之後可以從成績卡打開；沒有作答就不詢問', async () => {
+        const page = await openPage();
+        await playRound(page);
+        await page.click('#round-dialog-skip');
+        assert.equal(await page.$eval('#round-review', e => e.hidden), true);
+        await page.click('#round-review-open');
+        assert.equal(await page.$eval('#round-review', e => e.hidden), false);
+        assert.equal((await cards(page)).length, 1);
+        await page.click('#start-btn');
+        await page.keyboard.press('Escape');
+        assert.equal(await page.$eval('#round-dialog', d => d.open), false);
+        assert.equal(await page.$('#round-review-open'), null);
+        await page.closeContext();
+    });
+});
+
 describe('題目總覽', () => {
     test('每一題剛好有一個進度標籤：未作答或已作答', async () => {
         const page = await openPage({ records: { version: 2, items: {
@@ -274,6 +433,24 @@ describe('題目總覽', () => {
         assert.deepEqual(tags.slice(0, 3).map(t => t[0]), ['tag answered', 'tag answered', 'tag new']);
         const all = await page.evaluate(() => allQuestions.map(q => questionTags(peek(q.id)).filter(([c]) => c === 'new' || c === 'answered').length));
         assert.ok(all.length === 1120 && all.every(n => n === 1));
+        await page.closeContext();
+    });
+
+    test('依上次作答時間排序：新到舊、舊到新，未作答的都排在最後', async () => {
+        const at = t => ({ history: [{ t, pick: 1, ok: false, level: 'MEDIUM' }] });
+        const page = await openPage({ records: { version: 2, items: {
+            'ETH-0003': at('2026-01-01T00:00:00Z'), 'ETH-0001': at('2026-03-01T00:00:00Z'), 'ETH-0002': at('2026-02-01T00:00:00Z'),
+        } } });
+        await page.click('.tab[data-view="browse"]');
+        const order = () => page.evaluate(() => browseList().map(q => q.num));
+        await page.select('#b-sort', 'lastDesc');
+        let o = await order();
+        assert.deepEqual(o.slice(0, 4), [1, 2, 3, 4]);
+        await page.select('#b-sort', 'lastAsc');
+        o = await order();
+        assert.deepEqual(o.slice(0, 4), [3, 2, 1, 4]);
+        assert.equal(o.length, 1120);
+        assert.equal(await page.evaluate(() => settings.browseSort), 'lastAsc');
         await page.closeContext();
     });
 
@@ -387,11 +564,12 @@ describe('儲存', () => {
         assert.deepEqual(t.columns, ['seq', 'h', 'review', 'noReview', 'markAt', 'base']);   // 不存分數等算得出來的欄位
         assert.equal(t.rows.length, 1);
         assert.equal(t.rows[0][0], 1);
-        assert.deepEqual(t.rows[0][1][0].slice(1), [4, 1, 'H']);
+        assert.deepEqual(t.rows[0][1][0].slice(1, 5), [4, 1, 'H', 0]);   // 第 5 欄 0：不是模擬考
+        assert.equal(typeof t.rows[0][1][0][5], 'number');               // 第 6 欄：作答秒數
         await page.reload();
         await page.waitForFunction(() => document.querySelector('#f-chips .chip'));
         const r = await page.evaluate(() => ({ level: peek(Q('ETH-0001')).level, score: peek(Q('ETH-0001')).score }));
-        assert.deepEqual(r, { level: 'HARD', score: 1 });
+        assert.deepEqual(r, { level: 'HARD', score: 1.4 });              // HARD 1.0 × 速度 1.4（立刻作答）
         assert.deepEqual(page.errors, []);
         await page.closeContext();
     });
@@ -503,6 +681,27 @@ describe('版面', () => {
         assert.equal(await page.$eval('#session-bar', e => e.offsetParent === null), true);
         assert.equal(await page.$eval('#nav', e => e.offsetParent === null), true);
         assert.deepEqual(page.errors, []);
+        await page.closeContext();
+    });
+
+    test('手機：答完後難度按鈕固定在畫面底部，作答前不固定；頁面不會出現橫向捲軸', async () => {
+        const page = await openPage({ width: 390 });
+        await page.click('#start-btn');
+        assert.equal(await page.$eval('#meta', e => getComputedStyle(e).position), 'static');
+        await page.keyboard.press('4');
+        assert.equal(await page.$eval('#meta', e => getComputedStyle(e).position), 'fixed');
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
+        assert.deepEqual(page.errors, []);
+        await page.closeContext();
+    });
+
+    test('更多設定顯示目前的順序；頁首顯示目前的題庫或組合；排除的條件沒有刪除線', async () => {
+        const page = await openPage();
+        assert.equal(await text(page, '#more-summary'), '（順序：依題號）');
+        await page.select('#f-order', 'random');
+        assert.equal(await text(page, '#more-summary'), '（順序：弱點加權）');
+        assert.equal(await text(page, '.brand-sub'), '金融市場常識與職業道德測驗');
+        assert.equal(await page.$eval('.chip.exc', e => getComputedStyle(e).textDecorationLine), 'none');
         await page.closeContext();
     });
 });

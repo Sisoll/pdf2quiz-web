@@ -3,20 +3,23 @@
 function emptyRecords() { return { version: RECORD_VERSION, items: {}, exams: [] }; }
 
 /* ---------- 精簡格式（存檔用） ----------
-   每筆作答存成 [時間, 選項, 對錯, 難度, 來源]：
-   時間是 Unix 秒數的 36 進位字串；對錯 1 / 0；難度 E / M / H；模擬考的作答才有第 5 欄 'x'
+   每筆作答存成 [時間, 選項, 對錯, 難度, 來源, 秒數]：
+   時間是 Unix 秒數的 36 進位字串；對錯 1 / 0；難度 E / M / H；模擬考的作答第 5 欄是 'x'；
+   練習時記錄的作答秒數放第 6 欄（這時第 5 欄不是模擬考就寫 0），舊紀錄沒有秒數
    程式內部仍用物件格式，只在存檔、讀檔時轉換 */
 const LEVEL_CODE = { EASY: 'E', MEDIUM: 'M', HARD: 'H' };
 const LEVEL_NAME = { E: 'EASY', M: 'MEDIUM', H: 'HARD' };
 const toSec = t => Math.floor(Date.parse(t) / 1000) || 0;
 function packHistory(h) {
     const a = [toSec(h.t).toString(36), h.pick, h.ok ? 1 : 0, LEVEL_CODE[h.level] || 'M'];
-    if (h.src === 'exam') a.push('x');
+    if (h.src === 'exam' || typeof h.sec === 'number') a.push(h.src === 'exam' ? 'x' : 0);
+    if (typeof h.sec === 'number') a.push(h.sec);
     return a;
 }
 function unpackHistory(a) {
     const h = { t: new Date(parseInt(a[0], 36) * 1000).toISOString(), pick: a[1], ok: a[2] === 1, level: LEVEL_NAME[a[3]] || 'MEDIUM' };
     if (a[4] === 'x') h.src = 'exam';
+    if (typeof a[5] === 'number') h.sec = a[5];
     return h;
 }
 /* ---------- 版本 4：欄位式格式 ----------
@@ -284,7 +287,12 @@ function mergeRecordSets(a, b) {
         for (const h of [...ra.history, ...rb.history]) {
             const k = hkey(h);
             // 同一筆作答在兩邊的難度不同時（其中一邊後來改過），保留非 MEDIUM 的那個
-            if (!seen.has(k) || (seen.get(k).level === 'MEDIUM' && h.level !== 'MEDIUM')) seen.set(k, { ...h });
+            const prev = seen.get(k);
+            if (!prev || (prev.level === 'MEDIUM' && h.level !== 'MEDIUM')) seen.set(k, { ...h });
+            // 只有一邊記了作答秒數時保留秒數
+            const kept = seen.get(k);
+            if (typeof kept.sec !== 'number' && prev && typeof prev.sec === 'number') kept.sec = prev.sec;
+            if (typeof kept.sec !== 'number' && typeof h.sec === 'number') kept.sec = h.sec;
         }
         const history = [...seen.values()].sort((x, y) => Date.parse(x.t) - Date.parse(y.t));
         const ta = ra.markAt ? Date.parse(ra.markAt) : 0, tb = rb.markAt ? Date.parse(rb.markAt) : 0;

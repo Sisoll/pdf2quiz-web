@@ -7,6 +7,7 @@ let queue = [];
 let pos = 0;
 let answeredInView = false;
 let advancing = false;
+let shownAt = 0;         // 目前這題顯示的時間，用來算作答秒數
 let lastAnswer = null;   // 最近一次作答，給「復原」用
 let session = null;      // 進行中的一輪：{ limit, round, answers, answered, correct, skipped, startedAt }
 let lastResult = null;   // 上一輪的成績
@@ -39,7 +40,8 @@ function applySource(src) {
     $('f-category').innerHTML = '<option value="all">全部科目</option>' + cats.map(c => `<option value="${c.key}">${c.name}</option>`).join('');
     $('f-category').value = settings.category;
     $('f-source').title = src.combo ? `組合：${sourceBanksText(src)}` : '';
-    document.querySelector('.brand-sub').textContent = cats.map(c => c.name).join(' ・ ');
+    document.querySelector('.brand-sub').textContent = src.name;
+    document.querySelector('.brand-sub').title = src.combo ? `包含：${sourceBanksText(src)}` : '';
     renderExamCounts();
 }
 /* 題庫選單：組合題庫和單一題庫分成兩組；滑鼠移到組合上顯示包含的題庫 */
@@ -54,7 +56,8 @@ function renderSourceSelect() {
     }
 }
 function onSourceChanged() {
-    if (session || exam) { $('f-source').value = currentSource.id; return; }
+    if (exam) { $('f-source').value = currentSource.id; return; }
+    if (!endRoundForChange()) return;
     applySource(findSource($('f-source').value));
     saveSettings();
     resetView();
@@ -71,11 +74,7 @@ async function init() {
     renderSourceSelect();
     $('f-source').value = src.id;
     applySource(src);
-    $('f-order').value = settings.order;
-    $('f-threshold').value = settings.threshold;
-    $('f-min').value = settings.min;
-    $('f-max').value = settings.max;
-    $('f-limit').value = settings.limit;
+    showFilters();
     if (!Array.isArray(settings.include)) settings.include = [];
     if (!Array.isArray(settings.exclude)) settings.exclude = ['noReview'];
     buildChips();
@@ -90,7 +89,7 @@ async function init() {
     ['f-category', 'f-order', 'f-min', 'f-max', 'f-limit'].forEach(id => { $(id).onchange = onFiltersChanged; });
     ['f-min', 'f-max', 'f-limit'].forEach(id => { $(id).oninput = onFiltersChanged; });
     $('f-range-clear').onclick = () => { $('f-min').value = ''; $('f-max').value = ''; onFiltersChanged(); };
-    $('f-chips-reset').onclick = () => { settings.include = []; settings.exclude = ['noReview']; onFiltersChanged(); };
+    $('f-chips-reset').onclick = () => { if (!endRoundForChange()) return; settings.include = []; settings.exclude = ['noReview']; onFiltersChanged(); };
     ['f-jump', 'f-limit'].forEach(id => { $(id).onkeydown = e => { if (e.key === 'Enter') { onFiltersChanged(); start(); } }; });
     $('next-btn').onclick = next;
     $('prev-btn').onclick = prev;
@@ -111,11 +110,12 @@ async function init() {
 
     document.addEventListener('keydown', e => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        if ($('round-dialog').open) return;   // 彈窗開著時交給彈窗處理（Enter 按下聚焦的按鈕、Esc 關閉）
         if (view === 'exam') return examKey(e);
         if (view !== 'quiz') return;   // 題目總覽頁不使用作答快捷鍵
         const k = e.key.toLowerCase();
         // Enter 一律由這裡處理（preventDefault 也會擋掉按鈕預設的點擊，避免重複觸發）
-        if (e.key === 'Escape') stop();
+        if (e.key === 'Escape') { e.preventDefault(); stop(); }   // 擋掉預設動作，否則剛跳出的檢討彈窗會被同一次 Esc 關掉
         else if (!session && e.key === 'Enter') { e.preventDefault(); start(); }
         else if (['1', '2', '3', '4'].includes(e.key)) answer(+e.key);
         else if (e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); next(); }

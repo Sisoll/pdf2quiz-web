@@ -101,7 +101,7 @@ function renderExamGrid() {
         b.classList.toggle('cur', i === exam.idx);
     });
     const done = exam.items.filter(it => it.pick !== null).length;
-    $('x-progress').textContent = `已作答 ${done} / ${exam.items.length}`;
+    $('x-progress').innerHTML = `<span>已作答 <b>${done}</b> / ${exam.items.length}</span><span class="x-progress-bar"><span style="width:${(done / exam.items.length * 100).toFixed(1)}%"></span></span>`;
 }
 
 function renderExamQuestion() {

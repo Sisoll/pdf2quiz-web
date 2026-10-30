@@ -28,8 +28,8 @@ node tools/verify-banks.js                         # 逐題比對 banks/ 和 que
   - 舊版題目 id（`ETH-0001`）由 `convertLegacyId()` 轉換，讀入任何紀錄時自動處理。
 - **檔案格式**：題庫檔與作答紀錄都用欄位式 `{ columns, rows }`（`tableRows()` / `toTable()`），讀取時依欄位名稱對應。最上層有 `format` 與 `version`。
 - **作答紀錄的兩種格式**（`js/store.js`）：
-  - 程式內部：每題是物件 `{ history: [{ t, pick, ok, level, src? }], review, noReview, markAt, base?, ...算出來的欄位 }`。`score`、`correct`、`wrong`、`streak`、`level`、`last`、`lastAt` 都由 `recompute()`（`js/scoring.js`）依歷程重算，改過 `history` 就要呼叫它。
-  - 存檔（版本 4，`format: "pdf2quiz-records"`）：`packRecords()` 依題庫分組成表格（每題一列、只寫流水號），每筆作答壓成 `[秒數的 36 進位, 選項, 1/0, 'E'|'M'|'H', 'x'?]`，不存算得出來的欄位；對不到題庫的 id 放在 `other` 原樣保留。讀檔一律走 `migrateRecords()` / `normalizeRecords()`，它們也負責轉換版本 1～3 與舊 id。第一次轉換前的原始紀錄會另存在 IndexedDB 的 `records-backup-before-v4`。
+  - 程式內部：每題是物件 `{ history: [{ t, pick, ok, level, src?, sec? }], review, noReview, markAt, base?, ...算出來的欄位 }`。`score`、`correct`、`wrong`、`streak`、`level`、`last`、`lastAt` 都由 `recompute()`（`js/scoring.js`）依歷程重算，改過 `history` 就要呼叫它。
+  - 存檔（版本 4，`format: "pdf2quiz-records"`）：`packRecords()` 依題庫分組成表格（每題一列、只寫流水號），每筆作答壓成 `[時間（秒數的 36 進位）, 選項, 1/0, 'E'|'M'|'H', 'x'|0?, 作答秒數?]`（作答秒數是練習時才記，舊紀錄沒有；沒有秒數時計分當成平均，所以舊分數不變），不存算得出來的欄位；對不到題庫的 id 放在 `other` 原樣保留。讀檔一律走 `migrateRecords()` / `normalizeRecords()`，它們也負責轉換版本 1～3 與舊 id。第一次轉換前的原始紀錄會另存在 IndexedDB 的 `records-backup-before-v4`。
 - **儲存位置**：瀏覽器端存 IndexedDB（資料庫 `pdf2quiz`、store `kv`，key `records`；連結的紀錄檔 handle 也存在同一個 store）。localStorage 的 `pdf2quiz-records-v1` 只是舊版的位置，載入時搬移後刪除；設定仍存 localStorage 的 `pdf2quiz-settings-v1`。`saveRecords()` 會寫 IndexedDB，並在有連結紀錄檔時（File System Access API，只有 Chrome / Edge）延遲 300 ms 寫檔。
 - **合併**：`mergeRecordSets()` 用「秒數 + 選項 + 對錯」辨識同一筆作答，所以重複匯入不會增加筆數。開啟紀錄檔、合併匯入都走這裡。
 - **難度**：未作答的題目 `level` 是 `null`（未分級），答完預設 MEDIUM，題目的難度 = 最近一次作答的難度。不要讓未作答的題目落入任何難度的條件或統計。

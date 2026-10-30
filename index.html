@@ -17,12 +17,12 @@
                 <div class="brand-sub">金融市場常識 ・ 職業道德</div>
             </div>
         </div>
-        <a class="btn light small header-link" href="manage.html">題庫管理</a>
         <nav class="tabs" id="tabs">
             <button class="tab on" data-view="quiz">練習</button>
             <button class="tab" data-view="browse">題目總覽</button>
             <button class="tab" data-view="exam">模擬考</button>
         </nav>
+        <a class="btn light small header-link" href="manage.html">⚙️ 題庫管理</a>
     </header>
 
     <div class="card" id="setup">
@@ -42,6 +42,13 @@
                     <button class="btn light small" id="f-range-clear" title="清除分數區間">清除</button>
                 </div>
             </div>
+            <label>題數
+                <input type="number" id="f-limit" min="1" placeholder="不限" title="空白：一直出題直到按中止">
+            </label>
+        </div>
+        <details class="more-settings" id="more-settings">
+            <summary>更多設定 <span class="more-summary" id="more-summary"></span></summary>
+            <div class="controls">
             <label>順序
                 <select id="f-order">
                     <option value="seq">依題號</option>
@@ -55,16 +62,11 @@
                     </optgroup>
                 </select>
             </label>
-            <label>題數
-                <input type="number" id="f-limit" min="1" placeholder="不限" title="空白：一直出題直到按中止">
-            </label>
             <label>跳到題號
                 <input type="number" id="f-jump" min="1" placeholder="題號">
             </label>
-            <label>記住門檻
-                <input type="number" id="f-threshold" value="5" disabled title="目前固定為 5">
-            </label>
-        </div>
+            </div>
+        </details>
         <div class="cond-box">
             <div class="chips" id="f-chips"></div>
             <div class="cond-hint">
@@ -86,6 +88,7 @@
                 <li>分數範圍是 −2 到 8：上限 8，一直答錯會逐漸接近 −2 但不會更低。分數 ≥ 5，而且沒有標記「加強複習」，就是「已記住」。</li>
                 <li>每次作答各自記錄當次選的難度，之後改選不會影響以前的分數。</li>
                 <li>同一題在 10 分鐘內再次答對不加分，避免回上一題重複刷分。</li>
+                <li>答題速度：答對時，這次加的分數再乘上速度係數。12～20 秒是平均（×1）；比 12 秒快，每快 1 秒多 5%（最多 ×1.4）；比 20 秒慢，每慢 1 秒少 1.25%（最少 ×0.7）；超過 60 秒當成平均（可能離開了）。模擬考與舊紀錄沒有記錄秒數，也當成平均。</li>
                 <li>隨機「弱點加權」：作答次數少、錯得多、最近標 HARD 的題目比較容易先出現。權重 = 作答次數 × 錯題 × 難度，三項比重 1 : 1 : 1。
                     作答次數 = 1 + 2 ÷ (作答次數 + 1)；錯題 = 1 + (8 − 分數) ÷ 6 + 答錯次數 × 0.2（最多算 5 次）；難度 = EASY 0.7、MEDIUM 1、HARD 1.5（沒作答過算 1）。</li>
                 <li>隨機「未作答加強 / 錯題加強 / 難度加強」：把其中一項的比重提高為 1.5（1.5 : 1 : 1），其他不變。</li>
@@ -108,6 +111,13 @@
         </div>
         <div id="question" class="question">正在載入題庫，請稍候...</div>
         <div id="options"></div>
+        <div id="round-review" class="round-review" hidden>
+            <div class="round-review-head">
+                <span class="round-review-title">本輪檢討</span>
+                <div class="chips" id="rr-filters"></div>
+            </div>
+            <div id="rr-list" class="browse-list"></div>
+        </div>
         <div class="result-row">
             <div id="result" class="result"></div>
             <button class="linkbtn undo" id="undo-btn" hidden title="點錯了？撤銷這次作答（快捷鍵 Z）">↶ 復原這次作答</button>
@@ -183,6 +193,8 @@
                     <option value="scoreAsc">分數低到高</option>
                     <option value="scoreDesc">分數高到低</option>
                     <option value="wrongDesc">答錯次數多到少</option>
+                    <option value="lastDesc">上次作答時間：新到舊</option>
+                    <option value="lastAsc">上次作答時間：舊到新</option>
                 </select>
             </label>
             <button class="btn" id="b-toggle">顯示答案</button>
@@ -212,12 +224,27 @@
                 請用 Chrome 或 Edge 開啟本頁。
             </div>
         </div>
-        <div class="footer-actions">
-            <button class="btn light" id="export-json">匯出作答紀錄（JSON）</button>
-            <button class="btn light" id="export-csv">匯出作答紀錄（CSV / Excel）</button>
-            <button class="btn light" id="import-merge" title="把檔案裡的作答加進目前的紀錄，重複的不會多算">合併匯入</button>
-            <button class="btn light" id="import-replace" title="用檔案的紀錄取代目前的紀錄">取代匯入</button>
-            <button class="btn light" id="reset-btn">清除所有紀錄</button>
+        <div class="action-groups">
+            <div class="action-group">
+                <div class="action-group-title">📤 匯出</div>
+                <div class="footer-actions">
+                    <button class="btn light" id="export-json">JSON（備份用）</button>
+                    <button class="btn light" id="export-csv">CSV（Excel 分析）</button>
+                </div>
+            </div>
+            <div class="action-group">
+                <div class="action-group-title">📥 匯入</div>
+                <div class="footer-actions">
+                    <button class="btn light" id="import-merge" title="把檔案裡的作答加進目前的紀錄，重複的不會多算">合併匯入</button>
+                    <button class="btn light" id="import-replace" title="用檔案的紀錄取代目前的紀錄">取代匯入</button>
+                </div>
+            </div>
+            <div class="action-group danger-zone">
+                <div class="action-group-title">⚠️ 危險操作</div>
+                <div class="footer-actions">
+                    <button class="btn danger-light" id="reset-btn">清除所有紀錄</button>
+                </div>
+            </div>
             <input type="file" id="import-file" accept=".json,application/json">
         </div>
         <div class="hint">
@@ -229,6 +256,15 @@
 </div>
 
 <!-- 內建題庫清單與題庫檔由 tools/convert-questions.js 產生 -->
+<dialog id="round-dialog" class="dialog">
+    <div class="dialog-title">本輪結束</div>
+    <div class="dialog-body" id="round-dialog-body"></div>
+    <div class="dialog-actions">
+        <button class="btn light" id="round-dialog-skip">不用</button>
+        <button class="btn" id="round-dialog-review" autofocus>檢討本輪</button>
+    </div>
+</dialog>
+
 <script src="banks/index.js"></script>
 <script src="js/config.js"></script>
 <script src="js/banks.js"></script>

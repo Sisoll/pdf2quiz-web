@@ -10,6 +10,13 @@ function browseList() {
         case 'scoreAsc': list.sort((a, b) => r(a).score - r(b).score); break;
         case 'scoreDesc': list.sort((a, b) => r(b).score - r(a).score); break;
         case 'wrongDesc': list.sort((a, b) => r(b).wrong - r(a).wrong); break;
+        case 'lastDesc': case 'lastAsc': {
+            // 上次作答時間；未作答的題目不論哪個方向都排在最後
+            const dir = settings.browseSort === 'lastDesc' ? -1 : 1;
+            const at = q => (r(q).lastAt ? Date.parse(r(q).lastAt) : null);
+            list.sort((a, b) => at(a) === null || at(b) === null ? (at(a) === null) - (at(b) === null) : dir * (at(a) - at(b)));
+            break;
+        }
     }
     return list;
 }

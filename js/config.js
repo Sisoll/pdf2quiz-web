@@ -13,6 +13,10 @@ const SCORING = {
     wrongFactor: 0.5,                               // 答錯：分數 × 0.5 − 1
     wrongPenalty: 1,
     cooldownMs: 10 * 60 * 1000,                     // 10 分鐘內重複答對不加分
+    // 答對時依作答秒數加權（只影響這次加的分數）：12～20 秒為平均 ×1；
+    // 越快加越多（每快 1 秒 +5%，最多 +40%）；超過 20 秒稍微扣（每慢 1 秒 −1.25%，最多 −30%）；
+    // 超過 60 秒可能離開或分心，當成平均；沒有記錄秒數的舊作答（含模擬考）也當成平均
+    time: { fast: 12, slow: 20, bonusPerSec: 0.05, maxBonus: 0.4, penaltyPerSec: 0.0125, maxPenalty: 0.3, ignoreAfter: 60 },
 };
 const DEFAULT_THRESHOLD = 5;
 
@@ -47,7 +51,7 @@ const CONDITIONS = [
     { key: 'noReview', label: '暫停複習', group: '標記' },
 ];
 /* 條件與統計共用的圖示；難度用紅綠燈 */
-const ICONS = { matched: '🎯', new: '🆕', answered: '📝', mastered: '🧠', everWrong: '❌', EASY: '🟢', MEDIUM: '🟡', HARD: '🔴', none: '⚪', review: '📌', noReview: '⏸️', rate: '✅' };
+const ICONS = { matched: '🎯', new: '🆕', answered: '📝', mastered: '🧠', everWrong: '❌', EASY: '🟢', MEDIUM: '🟡', HARD: '🔴', none: '⚪', review: '📌', noReview: '⏸️', rate: '✅', history: '📈' };
 
 const $ = id => document.getElementById(id);
 function el(tag, className, text) {
@@ -58,3 +62,10 @@ function el(tag, className, text) {
 }
 const round2 = n => Math.round(n * 100) / 100;
 const streakMult = s => SCORING.streak[Math.min(s, SCORING.streak.length) - 1];
+function timeFactor(sec) {
+    const T = SCORING.time;
+    if (typeof sec !== 'number' || sec > T.ignoreAfter) return 1;
+    if (sec < T.fast) return round2(1 + Math.min(T.maxBonus, (T.fast - sec) * T.bonusPerSec));
+    if (sec > T.slow) return round2(1 - Math.min(T.maxPenalty, (sec - T.slow) * T.penaltyPerSec));
+    return 1;
+}
