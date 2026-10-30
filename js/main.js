@@ -132,6 +132,7 @@ async function onOtherTabChanged(kind) {
         if (view === 'browse') renderBrowse();
         return;
     }
+    if (kind === 'templates') return;   // 樣板只有題庫管理頁用得到
     if (session || exam) { alert('題庫或組合在其他分頁更新了，這一輪結束後請重新整理頁面。'); return; }
     location.reload();
 }

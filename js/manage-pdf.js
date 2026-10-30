@@ -31,7 +31,7 @@ function correctionRows(seq, before, after, note = '') {
 }
 
 /* ---------- 從 PDF 建立題庫 ---------- */
-const allTemplates = () => BUILTIN_TEMPLATES;
+const allTemplates = () => [...BUILTIN_TEMPLATES, ...userTemplates];   // userTemplates 在 manage-template.js
 /* 從檔名猜名稱與年份：「職業道德-113.pdf」→ 職業道德、2024（3 位數視為民國年） */
 function guessFromFileName(name) {
     const stem = name.replace(/\.[^.]+$/, '');
@@ -50,6 +50,7 @@ async function startPdfWork(source, lines) {
     $('p-year').value = g.year;
     $('p-key').value = '';
     onKeyInput();
+    resetTemplateBuilder();
     $('p-work').hidden = false;
     return pdfWork;
 }
@@ -65,7 +66,7 @@ function renderPdfWork() {
     const w = pdfWork;
     const r = w.ranked[w.chosen].result;
     $('p-source').textContent = `${w.source.name}${w.source.pages ? `：${w.source.pages} 頁` : ''}、${w.lines.length} 行文字`;
-    $('p-template').innerHTML = w.ranked.map((x, i) => `<option value="${i}">${x.template.name}（解析 ${x.result.questions.length} 題、失敗 ${x.result.problems.length} 段）</option>`).join('');
+    $('p-template').innerHTML = w.ranked.map((x, i) => `<option value="${i}">${x.template.name}${x.template.builtin ? '' : '（自建）'}（解析 ${x.result.questions.length} 題、失敗 ${x.result.problems.length} 段）</option>`).join('');
     $('p-template').value = String(w.chosen);
     const added = w.corrections.filter(c => c.field === 'manual').length;
     const left = r.problems.filter(p => !p.fixed).length;
@@ -160,7 +161,7 @@ async function createBankFromPdf() {
     return msg;
 }
 
-/* ---------- 修正既有題庫的題目（D2：內建題庫的修正存在使用者資料裡；不重新判定過去的作答） ---------- */
+/* ---------- 修正既有題庫的題目（內建題庫的修正存在使用者資料裡；不重新判定過去的作答） ---------- */
 async function correctQuestion(bankId, seq, next, note = '') {
     const entry = banks[bankId];
     const q = entry && entry.questions.find(x => x.seq === seq);

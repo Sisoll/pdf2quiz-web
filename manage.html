@@ -23,13 +23,13 @@
     <div class="card">
         <h1 class="card-title">資料保存</h1>
         <div class="notice" id="m-backup-status"></div>
-        <div class="hint">匯入的題庫、組合與作答紀錄只存在這個瀏覽器裡，不會上傳到任何地方。清除瀏覽器資料、使用無痕視窗、換電腦或換瀏覽器就會看不到；Safari 也可能自動清除一段時間沒開啟的網站資料。之後還想用的話，請用「完整備份」把題庫和作答紀錄一起匯出。</div>
+        <div class="hint">匯入的題庫、自建的樣板、組合與作答紀錄只存在這個瀏覽器裡，不會上傳到任何地方。清除瀏覽器資料、使用無痕視窗、換電腦或換瀏覽器就會看不到；Safari 也可能自動清除一段時間沒開啟的網站資料。之後還想用的話，請用「完整備份」把題庫和作答紀錄一起匯出。</div>
         <div class="footer-actions" style="margin-top: 12px">
             <button class="btn" id="m-backup">完整備份</button>
             <button class="btn light" id="m-import">匯入檔案</button>
             <input type="file" id="m-import-file" accept=".json,application/json" hidden>
         </div>
-        <div class="hint">「匯入檔案」可以讀：題庫檔（.quizbank.json）、完整備份檔、作答紀錄檔（新舊格式都可以，會合併），以及舊版的題庫 questions.json。</div>
+        <div class="hint">「匯入檔案」可以讀：題庫檔（.quizbank.json）、樣板（.template.json）、完整備份檔、作答紀錄檔（新舊格式都可以，會合併），以及舊版的題庫 questions.json。</div>
         <div class="manage-result" id="m-result"></div>
     </div>
 
@@ -50,6 +50,40 @@
                     <select id="p-template"></select>
                 </label>
             </div>
+            <details class="t-builder" id="t-builder">
+                <summary>樣板都不合？在取出的文字上標記範例，建立新樣板</summary>
+                <ol class="hint t-steps">
+                    <li>用滑鼠選取文字，再按下面的按鈕標記。每一題要標「題號」、每個「選項」（連同 (1)、(A)、① 這類標記一起選）和「答案」。</li>
+                    <li>至少標 2 題；挑選項數不同、有折行的題目，推出來的規則比較準。</li>
+                    <li>頁首、頁尾這類不屬於題目的行：點一下那一行，再按「忽略這行」。只有數字的行（頁碼）會自動忽略。</li>
+                    <li>按「推出樣板」，確認結果後儲存。</li>
+                </ol>
+                <div class="t-toolbar">
+                    <button class="btn small" id="t-num">題號</button>
+                    <button class="btn small" id="t-option">選項</button>
+                    <button class="btn small" id="t-answer">答案</button>
+                    <button class="btn light small" id="t-ignore">忽略這行</button>
+                    <button class="btn light small" id="t-undo">復原上一個</button>
+                    <button class="btn light small" id="t-clear">全部清除</button>
+                    <label class="browse-sort">從第幾行
+                        <input type="number" id="t-from" min="1" value="1">
+                    </label>
+                </div>
+                <div class="t-lines" id="t-lines"></div>
+                <div class="manage-result" id="t-marks"></div>
+                <div class="controls" style="margin-top: 12px">
+                    <label>樣板名稱
+                        <input type="text" id="t-name" placeholder="例如：保險法規題庫的格式">
+                    </label>
+                </div>
+                <div class="start-row"><button class="btn" id="t-infer">推出樣板</button></div>
+                <div class="notice manage-result" id="t-msg" hidden></div>
+                <div id="t-result" hidden>
+                    <div class="hint">樣板設定（欄位說明見 README；熟悉正規表達式的話可以直接修改）</div>
+                    <textarea class="q-edit t-json" id="t-json" rows="14"></textarea>
+                    <div class="start-row"><button class="btn" id="t-save">儲存樣板並套用</button></div>
+                </div>
+            </details>
             <div class="notice manage-result" id="p-summary"></div>
             <div id="p-problems" class="item-list"></div>
             <div class="browse-head">
@@ -74,6 +108,13 @@
             <div class="hint" id="p-key-hint"></div>
             <div class="start-row"><button class="btn" id="p-create">建立題庫</button></div>
         </div>
+    </div>
+
+    <div class="card">
+        <h1 class="card-title">樣板</h1>
+        <div class="hint" style="margin-top: 0">樣板描述題庫 PDF 的版面（題號、選項、答案的寫法）。自建的樣板存在這個瀏覽器裡，完整備份會一起帶走；也可以匯出成 .template.json 給別人，用上方的「匯入檔案」匯入。</div>
+        <div id="t-list" class="item-list"></div>
+        <div id="t-edit"></div>
     </div>
 
     <div class="card">
@@ -123,5 +164,6 @@
 <script src="js/store.js"></script>
 <script src="js/manage.js"></script>
 <script src="js/manage-pdf.js"></script>
+<script src="js/manage-template.js"></script>
 </body>
 </html>

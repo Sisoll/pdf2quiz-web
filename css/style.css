@@ -478,3 +478,17 @@ details.rules ul { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; }
     background: var(--surface); color: var(--text); font: inherit; font-size: 14px; line-height: 1.6; resize: vertical;
 }
 .manage code { font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+.t-builder { margin: 14px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; }
+.t-builder summary { cursor: pointer; color: var(--primary); font-weight: 700; }
+.t-steps { margin: 10px 0; padding-left: 20px; line-height: 1.8; }
+.t-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 10px 0; }
+.t-lines { max-height: 420px; overflow: auto; padding: 8px 0; background: var(--surface-2); border-radius: 8px; font-size: 13px; line-height: 1.7; }
+.t-line { display: flex; gap: 10px; padding: 0 10px; }
+.t-ln { flex: none; min-width: 3em; text-align: right; color: var(--text-3); user-select: none; }
+.t-text { white-space: pre-wrap; word-break: break-all; }
+.t-ignored .t-text { color: var(--text-3); text-decoration: line-through; }
+.t-lines mark { border-radius: 3px; padding: 0 1px; color: inherit; }
+.mk-num { background: var(--primary-soft); outline: 1px solid var(--primary); }
+.mk-option { background: var(--ok-soft); box-shadow: inset 2px 0 0 var(--ok); }
+.mk-answer { background: var(--bad-soft); outline: 1px solid var(--bad); }
+.t-json { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }

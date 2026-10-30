@@ -10,9 +10,22 @@
 2. **練習**：設定科目、分數區間、條件、順序與題數，按「開始」出題。答完選 EASY / MEDIUM / HARD 會直接進下一題；點錯可以按「復原」。也可以標記「加強複習」或「暫停複習」。
 3. **題目總覽**：依條件列出題目，可排序、分頁、一鍵顯示 / 隱藏答案。
 4. **模擬考**：各科隨機抽題（預設各 50 題）、限時，作答中不顯示答案，交卷後看各科分數與檢討。
-5. **題庫管理**（頁首的「題庫管理」，`manage.html`）：匯入、匯出、刪除題庫，把幾份題庫建成組合，以及「完整備份」（題庫、組合、作答紀錄一起匯出）與還原。匯入的題庫只存在這個瀏覽器裡，之後還想用請記得完整備份。
+5. **題庫管理**（頁首的「題庫管理」，`manage.html`）：匯入、匯出、刪除題庫，把幾份題庫建成組合，以及「完整備份」（題庫、樣板、組合、作答紀錄一起匯出）與還原。匯入的題庫只存在這個瀏覽器裡，之後還想用請記得完整備份。
 6. **從 PDF 建立題庫**（題庫管理頁）：選擇 PDF 後會自動試過內建樣板、挑解析得最好的一個，可以預覽、看檢查結果（無法解析的段落、題號跳號或重複、題目重複）、手動修正或把無法解析的段落整理成題目，填上類別 key、名稱、年份就建立完成。目前只支援單選題，不支援掃描檔。PDF 取出的文字有問題時，可以改用 Python 取文字：`uv run --with pdfplumber python tools/extract_text.py 檔名.pdf > 檔名.txt`，再用「匯入 Python 取出的文字」。
 7. **修正題目**（題庫管理頁，每份題庫的「修正題目」）：內建題庫的修正存在這個瀏覽器裡（完整備份會一起帶走），題庫檔本身不變；修正答案不會重新判定過去的作答。
+8. **建立樣板**（從 PDF 建立題庫時，「樣板都不合？」）：在程式取出的文字上用滑鼠選取，標出至少 2 題的題號、每個選項和答案，頁首頁尾標成忽略，按「推出樣板」。程式會把推出的樣板套回你標的範例，結果一致才能儲存。自建的樣板存在這個瀏覽器裡（完整備份會一起帶走），也可以匯出成 `.template.json`、用「匯入檔案」匯入、直接修改設定。
+
+### 樣板設定
+
+樣板是一段 JSON，內建樣板在 `templates/index.js`：
+
+| 欄位 | 說明 |
+| --- | --- |
+| `start` | 題目開頭那一行的正規表達式，要有具名群組 `num`（題號）和 `rest`（同一行其餘的文字）；答案寫在題號前時另有 `ans` |
+| `sequential` | 題號要比上一題大、最多跳幾號才算新的一題（避免題目內容剛好像題號）；`0` 表示不檢查 |
+| `options` | `marker`：選項標記 `paren-digit`（(1)）、`paren-alpha`（(A)）、`circled`（①）；`count`：選項數 2～5，或 `"auto"` 自動判斷 |
+| `answer` | `{ "position": "start" }`（答案在 `start` 的 `ans` 群組），或 `{ "position": "pattern", "pattern": "答案[:：](?<ans>[A-E])" }`（在題目文字裡找，找到後從題目移除） |
+| `ignore`、`ignorePattern` | 含這些文字的行、符合這些正規表達式的行不算題目內容（頁首、頁尾、頁碼） |
 
 ## 作答紀錄與同步
 
@@ -40,7 +53,7 @@ node tools/convert-questions.js   # 產生 banks/
 node tools/verify-banks.js        # 逐題比對 banks/ 和 questions.json
 ```
 
-`questions.json` 原本由 `parse_pdf.py` 從 `source/` 的 PDF 產生（`uv run --with pdfplumber python parse_pdf.py`）。注意 ETH 第 279 題的答案經過人工修正（PDF 印的是 1，正確是 4），重新解析 PDF 會蓋掉這個修正；修正紀錄在題庫檔的 `corrections`。之後改由題庫管理頁從 PDF 建立題庫，規劃見 `plans/question-bank-manager.md`。
+`questions.json` 原本由 `parse_pdf.py` 從 `source/` 的 PDF 產生（`uv run --with pdfplumber python parse_pdf.py`）。注意 ETH 第 279 題的答案經過人工修正（PDF 印的是 1，正確是 4），重新解析 PDF 會蓋掉這個修正；修正紀錄在題庫檔的 `corrections`。現在改由題庫管理頁從 PDF 建立題庫；尚未完成的延伸項目見 `plans/question-bank-manager.md`。
 
 ## 計分規則
 
@@ -69,8 +82,9 @@ node tools/verify-banks.js        # 逐題比對 banks/ 和 questions.json
 | `js/main.js` | 啟動、分頁切換、快捷鍵 |
 | `manage.html`、`js/manage.js` | 題庫管理頁 |
 | `js/manage-pdf.js` | 從 PDF 建立題庫、修正題目 |
+| `js/manage-template.js` | 標記範例建立樣板、樣板管理 |
 | `js/pdftext.js` | 用 pdf.js 從 PDF 取出文字行 |
-| `js/templates.js`、`templates/index.js` | 拆題引擎與內建樣板 |
+| `js/templates.js`、`templates/index.js` | 拆題引擎、從標記推出樣板，與內建樣板 |
 | `vendor/pdfjs/` | pdf.js 3.11.174（Apache-2.0，見該資料夾的 LICENSE） |
 | `parse_pdf.py` | PDF 轉 `questions.json`（舊流程） |
 | `tools/` | 題庫轉換與驗證腳本 |
