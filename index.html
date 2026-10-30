@@ -67,7 +67,11 @@
         </div>
         <div class="cond-box">
             <div class="chips" id="f-chips"></div>
-            <div class="cond-hint">點條件切換：<span class="chip demo">不限</span> → <span class="chip demo inc">包含</span> → <span class="chip demo exc">排除</span>。符合任一個「包含」、而且不符合任何「排除」的題目才會出現；沒有「包含」就是全部題目。括號內是目前科目與分數區間內的題數。<button class="linkbtn" id="f-chips-reset">重設條件</button></div>
+            <div class="cond-hint">
+                點條件切換：<span class="chip demo">不限</span> → <span class="chip demo inc">包含</span> → <span class="chip demo exc">排除</span><button class="linkbtn" id="f-chips-reset">重設條件</button><br>
+                符合任一個「包含」、而且不符合任何「排除」的題目才會出現；沒有「包含」就是全部題目。<br>
+                括號內是目前科目與分數區間內的題數。
+            </div>
         </div>
         <div class="start-row" id="start-row">
             <button class="btn" id="start-btn">開始</button>
@@ -113,7 +117,12 @@
             <button class="btn danger" id="stop-btn">中止</button>
             <button class="btn" id="next-btn">下一題</button>
         </div>
-        <div class="hint">快捷鍵：Enter 開始 ・ 1–4 作答 ・ 答完後按 E / M / H 選難度並進下一題，或按 Enter / → 以 MEDIUM 進下一題 ・ R 加強複習、S 暫停複習（按 × 或再按一次移除，作答前也可以）・ Z 復原這次作答 ・ ← 上一題 ・ Esc 中止</div>
+        <div class="hint">
+            快捷鍵：<br>
+            Enter 開始 ・ 1–4 作答 ・ ← 上一題 ・ Esc 中止<br>
+            答完後按 E / M / H 選難度並進下一題，或按 Enter / → 以 MEDIUM 進下一題<br>
+            R 加強複習、S 暫停複習（按 × 或再按一次移除，作答前也可以）・ Z 復原這次作答
+        </div>
     </div>
 
     <div class="card" id="exam" hidden>
@@ -129,7 +138,10 @@
                 </label>
             </div>
             <label class="check"><input type="checkbox" id="x-record" checked> 成績計入作答紀錄（有作答的題目各記一次，分數會跟著變）</label>
-            <div class="hint">各科從題庫完全隨機抽題（不加權），每科滿分 100 分。作答中不顯示答案，可以隨時改答案，交卷後才看結果。</div>
+            <div class="hint">
+                各科從題庫完全隨機抽題（不加權），每科滿分 100 分。<br>
+                作答中不顯示答案，可以隨時改答案，交卷後才看結果。
+            </div>
             <div class="start-row"><button class="btn" id="x-start">開始考試</button></div>
             <div id="x-history" class="x-history"></div>
         </div>
@@ -175,7 +187,10 @@
             </label>
             <button class="btn" id="b-toggle">顯示答案</button>
         </div>
-        <div class="hint">清單使用上方的科目、分數區間與條件。答案隱藏時，點一下題目可以只看那一題的答案。</div>
+        <div class="hint">
+            清單使用上方的科目、分數區間與條件。<br>
+            答案隱藏時，點一下題目可以只看那一題的答案。
+        </div>
         <div class="pager" id="b-pager-top"></div>
         <div id="browse-list" class="browse-list"></div>
         <div class="pager" id="b-pager-bottom"></div>
@@ -191,7 +206,11 @@
                 <button class="btn" id="file-resume" hidden>繼續使用上次的紀錄檔</button>
                 <button class="btn light" id="file-unlink" hidden>取消連結</button>
             </div>
-            <div class="hint" id="file-hint">連結後，每次作答、標記都會自動寫回這個 JSON 檔。開啟既有紀錄檔時，會和瀏覽器裡的紀錄合併，不會蓋掉任何一邊。請用 Chrome 或 Edge 開啟本頁。</div>
+            <div class="hint" id="file-hint">
+                連結後，每次作答、標記都會自動寫回這個 JSON 檔。<br>
+                開啟既有紀錄檔時，會和瀏覽器裡的紀錄合併，不會蓋掉任何一邊。<br>
+                請用 Chrome 或 Edge 開啟本頁。
+            </div>
         </div>
         <div class="footer-actions">
             <button class="btn light" id="export-json">匯出作答紀錄（JSON）</button>
@@ -201,7 +220,11 @@
             <button class="btn light" id="reset-btn">清除所有紀錄</button>
             <input type="file" id="import-file" accept=".json,application/json">
         </div>
-        <div class="hint">沒有連結紀錄檔時，紀錄只存在這台電腦的瀏覽器裡。兩台電腦各自練習時，用「合併匯入」把另一台匯出的 JSON 加進來，重複的作答不會多算。匯出 CSV 可以直接用 Excel 打開做分析。</div>
+        <div class="hint">
+            沒有連結紀錄檔時，紀錄只存在這台電腦的瀏覽器裡。<br>
+            兩台電腦各自練習時，用「合併匯入」把另一台匯出的 JSON 加進來，重複的作答不會多算。<br>
+            匯出 CSV 可以直接用 Excel 打開做分析。
+        </div>
     </div>
 </div>
 

@@ -46,6 +46,8 @@ const CONDITIONS = [
     { key: 'review', label: '加強複習', group: '標記' },
     { key: 'noReview', label: '暫停複習', group: '標記' },
 ];
+/* 條件與統計共用的圖示；難度用紅綠燈 */
+const ICONS = { matched: '🎯', new: '🆕', answered: '📝', mastered: '🧠', everWrong: '❌', EASY: '🟢', MEDIUM: '🟡', HARD: '🔴', none: '⚪', review: '📌', noReview: '⏸️', rate: '✅' };
 
 const $ = id => document.getElementById(id);
 function el(tag, className, text) {

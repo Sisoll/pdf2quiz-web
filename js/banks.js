@@ -82,10 +82,12 @@ function unpackBank(data) {
 /* ---------- 可以選的題庫與組合 ---------- */
 function sourceList() {
     const combos = [...(CATALOG.combos || []).map(c => ({ ...c, builtin: true })), ...userCombos].filter(c => c.banks.some(id => banks[id]))
-        .map(c => ({ id: c.id, name: c.name, bankIds: c.banks.filter(id => banks[id]), exam: c.exam || {}, builtin: !!c.builtin }));
-    const singles = Object.values(banks).map(({ bank }) => ({ id: bank.id, name: `${bank.name}（${bank.year || '未設定年份'}）`, bankIds: [bank.id], exam: {} }));
+        .map(c => ({ id: c.id, name: c.name, bankIds: c.banks.filter(id => banks[id]), exam: c.exam || {}, builtin: !!c.builtin, combo: true }));
+    const singles = Object.values(banks).map(({ bank }) => ({ id: bank.id, name: `${bank.name}（${bank.year || '未設定年份'}）`, bankIds: [bank.id], exam: {}, combo: false }));
     return [...combos, ...singles];
 }
+/* 組合包含哪些題庫，給滑鼠提示用 */
+const sourceBanksText = src => src.bankIds.map(id => `${banks[id].bank.name}（${banks[id].bank.year || '未設定年份'}）`).join('、');
 function findSource(id) {
     const list = sourceList();
     return list.find(s => s.id === id) || list.find(s => s.id === CATALOG.defaultCombo) || list[0] || null;

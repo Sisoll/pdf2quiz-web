@@ -36,7 +36,7 @@ const BANKS = [
     { key: 'MKT', name: '金融市場常識', source: '金融市場常識-113.pdf', corrections: [] },
 ];
 
-const COMBO = { id: 'finance-2024', name: '金融證照（113 年）' };
+const COMBO = { id: 'finance-2024', name: '金融市場常識與職業道德測驗' };
 // 模擬考預設值，來源：js/exam.js 第 15 行（各科 Math.min(50, 題數)）、
 // index.html 第 121 行（時間 60 分鐘）、第 124 行（每科及格 70 分）
 const EXAM_DEFAULTS = { perCategory: 50, pass: 70, minutes: 60 };

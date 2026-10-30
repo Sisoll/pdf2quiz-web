@@ -86,6 +86,7 @@ function start() {
     pos = 0;
     setRunning(true);
     render();
+    $('quiz').scrollIntoView({ block: 'start', behavior: 'smooth' });   // 開始後畫面以題目為主
 }
 function finish(reason) {
     if (!session) return;

@@ -179,17 +179,20 @@ function renderTemplates() {
     for (const t of allTemplates()) {
         const row = el('div', 'item-row');
         const main = el('div', 'item-main');
-        main.append(el('div', 'item-title', t.name), el('div', 'item-sub', `${t.id} ・ ${t.builtin ? '內建' : '自建'}${t.example ? ` ・ 例：${t.example}` : ''}`));
+        main.append(titleLine(t.name, pill(t.builtin ? '內建' : '自建', t.builtin ? 'builtin' : 'user')), el('div', 'item-sub', t.id));
+        if (t.example) main.append(el('code', 'item-example', t.example));
         const exp = el('button', 'btn light small', '匯出');
         exp.onclick = () => exportTemplate(t.id);
-        row.append(main, exp);
+        const actions = el('div', 'item-actions');
+        actions.append(exp);
         if (!t.builtin) {
             const edit = el('button', 'btn light small', '修改');
             edit.onclick = () => openTemplateEditor(t.id);
             const del = el('button', 'btn light small', '刪除');
             del.onclick = () => { if (confirm(`確定要刪除樣板「${t.name}」嗎？已經建立的題庫不受影響。`)) deleteTemplate(t.id); };
-            row.append(edit, del);
+            actions.append(edit, del);
         }
+        row.append(rowIcon('📐', 'emoji'), main, actions);
         box.appendChild(row);
     }
 }

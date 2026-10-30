@@ -104,7 +104,37 @@ describe('出題條件', () => {
         assert.deepEqual(await count(page, ['MEDIUM'], []), ['3', '4']);
         assert.equal((await count(page, [], ['MEDIUM'])).length, 1118);
         assert.equal(await page.evaluate(() => peek(Q('ETH-0006')).level), null);
-        assert.match(await text(page, '#stats'), /EASY 2 ・ MEDIUM 2 ・ HARD 1/);
+        // 統計只算符合出題規則的題目：預設排除暫停複習，ETH-0005（EASY）不算
+        assert.match(await text(page, '#stats'), /EASY 1\s*🟡 MEDIUM 2\s*🔴 HARD 1\s*⚪ 未分級 1115/);
+        await page.closeContext();
+    });
+
+    test('統計跟著出題條件變：只算符合的題目，並附上目前科目的總題數', async () => {
+        const page = await openPage({ records });
+        const stats = () => page.evaluate(() => { renderStats(); return $('stats').innerText.replace(/\s+/g, ' '); });
+        await page.evaluate(() => { settings.include = ['EASY']; settings.exclude = []; });
+        let s = await stats();
+        assert.match(s, /符合出題規則 2 \/ 1120 題/);
+        assert.match(s, /已作答 2 🆕 未作答 0/);
+        assert.match(s, /加強複習 0 ⏸️ 暫停複習 1/);
+        assert.match(s, /EASY 2 🟡 MEDIUM 0 🔴 HARD 0 ⚪ 未分級 0/);
+        await page.evaluate(() => { settings.include = ['new']; $('f-category').value = 'ETH'; readFilters(); });
+        s = await stats();
+        assert.match(s, /符合出題規則 611 \/ 616 題/);
+        assert.match(s, /已作答 0 🆕 未作答 611/);
+        assert.match(s, /累計答對率 —/);
+        await page.closeContext();
+    });
+
+    test('按下開始後畫面捲到題目', async () => {
+        const page = await openPage({ records });
+        await page.setViewport({ width: 900, height: 600 });
+        await page.click('#start-btn');
+        await page.waitForFunction(() => Math.abs($('quiz').getBoundingClientRect().top) < 5, { timeout: 3000 });
+        await page.click('.tab[data-view="exam"]');
+        await page.evaluate(() => scrollTo(0, 0));
+        await page.click('#x-start');
+        await page.waitForFunction(() => Math.abs($('exam').getBoundingClientRect().top) < 5, { timeout: 3000 });
         await page.closeContext();
     });
 
@@ -442,6 +472,19 @@ describe('題庫與 id 轉換', () => {
         await page.waitForFunction(() => document.querySelector('#f-chips .chip'));
         assert.equal(await page.evaluate(() => allQuestions.length), 504);
         assert.deepEqual(page.errors, []);
+        await page.closeContext();
+    });
+
+    test('題庫選單：組合題庫和單一題庫分開，滑鼠移到組合上顯示包含的題庫', async () => {
+        const page = await openPage();
+        const r = await page.evaluate(() => [...document.querySelectorAll('#f-source optgroup')].map(g => [g.label, [...g.children].map(o => [o.textContent, o.title])]));
+        assert.deepEqual(r, [
+            ['組合題庫', [['金融市場常識與職業道德測驗', '包含：職業道德（2024）、金融市場常識（2024）']]],
+            ['單一題庫', [['職業道德（2024）', ''], ['金融市場常識（2024）', '']]],
+        ]);
+        assert.equal(await page.$eval('#f-source', e => e.title), '組合：職業道德（2024）、金融市場常識（2024）');
+        await page.select('#f-source', await page.evaluate(() => sourceList().find(s => !s.combo).id));
+        assert.equal(await page.$eval('#f-source', e => e.title), '');
         await page.closeContext();
     });
 

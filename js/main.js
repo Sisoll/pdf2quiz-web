@@ -38,8 +38,20 @@ function applySource(src) {
     if (!cats.some(c => c.key === settings.category)) settings.category = 'all';
     $('f-category').innerHTML = '<option value="all">全部科目</option>' + cats.map(c => `<option value="${c.key}">${c.name}</option>`).join('');
     $('f-category').value = settings.category;
+    $('f-source').title = src.combo ? `組合：${sourceBanksText(src)}` : '';
     document.querySelector('.brand-sub').textContent = cats.map(c => c.name).join(' ・ ');
     renderExamCounts();
+}
+/* 題庫選單：組合題庫和單一題庫分成兩組；滑鼠移到組合上顯示包含的題庫 */
+function renderSourceSelect() {
+    const sel = $('f-source');
+    sel.innerHTML = '';
+    for (const [label, list] of [['組合題庫', sourceList().filter(s => s.combo)], ['單一題庫', sourceList().filter(s => !s.combo)]]) {
+        if (!list.length) continue;
+        const group = Object.assign(document.createElement('optgroup'), { label });
+        for (const s of list) group.appendChild(Object.assign(document.createElement('option'), { value: s.id, textContent: s.name, title: s.combo ? `包含：${sourceBanksText(s)}` : '' }));
+        sel.appendChild(group);
+    }
 }
 function onSourceChanged() {
     if (session || exam) { $('f-source').value = currentSource.id; return; }
@@ -56,7 +68,7 @@ async function init() {
         return;
     }
     records = await loadRecords();
-    $('f-source').innerHTML = sourceList().map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    renderSourceSelect();
     $('f-source').value = src.id;
     applySource(src);
     $('f-order').value = settings.order;

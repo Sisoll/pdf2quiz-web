@@ -13,7 +13,7 @@ window.QUIZ_CATALOG = {
   "combos": [
     {
       "id": "finance-2024",
-      "name": "金融證照（113 年）",
+      "name": "金融市場常識與職業道德測驗",
       "banks": [
         "ETH-2024-NX89",
         "MKT-2024-8MYQ"

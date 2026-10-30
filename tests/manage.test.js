@@ -25,8 +25,7 @@ describe('題庫', () => {
         const rows = await page.$$eval('#m-banks .item-row', rs => rs.map(r => r.innerText));
         assert.equal(rows.length, 2);
         assert.match(rows[0], /職業道德/);
-        assert.match(rows[0], /616 題/);
-        assert.match(rows[0], /有作答紀錄 1 題/);
+        assert.match(rows[0], /已作答 1 \/ 616 題/);
         assert.equal(await page.$$eval('#m-banks .item-row button', bs => bs.filter(b => b.textContent === '刪除').length), 0);
         const exported = await page.evaluate(() => JSON.stringify(bankData(Object.keys(banks)[0])));
         assert.equal(JSON.parse(exported).format, 'pdf2quiz-bank');

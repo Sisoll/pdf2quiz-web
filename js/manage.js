@@ -303,6 +303,22 @@ function renderBackupStatus() {
     box.textContent = `匯入的題庫 ${userBanks} 份、自建組合 ${userCombos.length} 個 ・ ${lastText}`;
     box.classList.toggle('warn', (userBanks > 0 || userCombos.length > 0) && (days === null || days > BACKUP_REMIND_DAYS));
 }
+/* 清單列共用的小元件：左邊的徽章、標籤、作答進度條 */
+function rowIcon(text, cls = '') { return el('div', `item-icon ${cls}`, text); }
+function pill(text, cls = '') { return el('span', `pill ${cls}`, text); }
+function titleLine(name, ...pills) {
+    const t = el('div', 'item-title');
+    t.append(el('span', '', name), ...pills);
+    return t;
+}
+function progressLine(questions) {
+    const done = questions.filter(q => { const r = records.items[q.id]; return r && r.history.length; }).length;
+    const box = el('div', 'item-progress');
+    const bar = el('div', 'mini-bar');
+    bar.appendChild(Object.assign(el('span'), { style: `width:${questions.length ? done / questions.length * 100 : 0}%` }));
+    box.append(bar, el('span', '', `📝 已作答 ${done} / ${questions.length} 題`));
+    return box;
+}
 function renderBanks() {
     const box = $('m-banks');
     box.innerHTML = '';
@@ -310,37 +326,43 @@ function renderBanks() {
     for (const { bank, questions, builtin } of list) {
         const row = el('div', 'item-row');
         const main = el('div', 'item-main');
-        main.append(el('div', 'item-title', `${bank.name}（${bank.key} ・ ${bank.year || '未設定年份'}）`),
-            el('div', 'item-sub', `${bank.id} ・ ${questions.length} 題 ・ 有作答紀錄 ${recordCount(bank.id)} 題 ・ ${builtin ? '內建' : '匯入'}${bank.source ? ` ・ 來源 ${bank.source}` : ''}`));
+        main.append(titleLine(bank.name, pill(bank.year || '未設定年份'), pill(builtin ? '內建' : '匯入', builtin ? 'builtin' : 'user')),
+            el('div', 'item-sub', `${bank.id}${bank.source ? ` ・ 來源 ${bank.source}` : ''}`),
+            progressLine(questions));
         const fix = el('button', 'btn light small', '修正題目');
         fix.onclick = () => openCorrection(bank.id);
         const exp = el('button', 'btn light small', '匯出');
         exp.onclick = () => exportBank(bank.id);
-        row.append(main, fix, exp);
+        const actions = el('div', 'item-actions');
+        actions.append(fix, exp);
         if (!builtin) {
             const del = el('button', 'btn light small', '刪除');
             del.onclick = () => onDeleteBank(bank.id);
-            row.append(del);
+            actions.append(del);
         }
+        row.append(rowIcon(bank.key), main, actions);
         box.appendChild(row);
     }
 }
 function renderCombos() {
     const box = $('m-combos');
     box.innerHTML = '';
-    for (const c of sourceList().filter(s => s.bankIds.length && !s.id.match(BANK_ID))) {
+    for (const c of sourceList().filter(s => s.combo)) {
         const row = el('div', 'item-row');
         const main = el('div', 'item-main');
-        const names = c.bankIds.map(id => banks[id].bank.name).join(' + ');
         const ex = c.exam || {};
-        main.append(el('div', 'item-title', c.name),
-            el('div', 'item-sub', `${names} ・ 模擬考各科 ${ex.perCategory ?? 50} 題、${ex.pass ?? 70} 分及格${ex.minutes ? `、${ex.minutes} 分鐘` : ''} ・ ${c.builtin ? '內建' : '自建'}`));
-        row.append(main);
+        const parts = el('div', 'item-pills');
+        parts.append(...c.bankIds.map(id => pill(`${banks[id].bank.name}（${banks[id].bank.year || '未設定年份'}）`, 'soft')));
+        main.append(titleLine(c.name, pill(c.builtin ? '內建' : '自建', c.builtin ? 'builtin' : 'user')), parts,
+            el('div', 'item-sub', `⏱️ 模擬考各科 ${ex.perCategory ?? 50} 題、${ex.pass ?? 70} 分及格${ex.minutes ? `、${ex.minutes} 分鐘` : '、不限時間'}`),
+            progressLine(c.bankIds.flatMap(id => banks[id].questions)));
+        const actions = el('div', 'item-actions');
         if (!c.builtin) {
             const del = el('button', 'btn light small', '刪除');
             del.onclick = () => { if (confirm(`確定要刪除組合「${c.name}」嗎？題庫和作答紀錄不受影響。`)) deleteCombo(c.id); };
-            row.append(del);
+            actions.append(del);
         }
+        row.append(rowIcon('🧩', 'emoji'), main, actions);
         box.appendChild(row);
     }
     const picks = $('c-banks');

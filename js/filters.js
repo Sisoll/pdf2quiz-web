@@ -72,7 +72,7 @@ function buildChips() {
         for (const c of CONDITIONS.filter(c => c.group === g)) {
             const chip = Object.assign(document.createElement('button'), { className: 'chip', type: 'button' });
             chip.dataset.key = c.key;
-            chip.append(`${c.label} `, Object.assign(document.createElement('small'), { className: 'cnt' }));
+            chip.append(`${ICONS[c.key]} ${c.label} `, Object.assign(document.createElement('small'), { className: 'cnt' }));
             chip.onclick = () => cycleChip(c.key);
             wrap.appendChild(chip);
         }
@@ -101,30 +101,40 @@ function renderChips() {
     });
 }
 
+/* 統計：只算符合出題規則的題目，題數旁邊附上目前科目的總題數 */
 function renderStats() {
     renderChips();
-    const scope = allQuestions.filter(q => settings.category === 'all' || q.categoryKey === settings.category);
-    let done = 0, mastered = 0, review = 0, noReview = 0, easy = 0, medium = 0, hard = 0, correct = 0, wrong = 0;
-    for (const q of scope) {
+    const total = allQuestions.filter(q => settings.category === 'all' || q.categoryKey === settings.category).length;
+    const list = allQuestions.filter(matches);
+    const n = { done: 0, mastered: 0, review: 0, noReview: 0, EASY: 0, MEDIUM: 0, HARD: 0, correct: 0, wrong: 0 };
+    for (const q of list) {
         const r = peek(q.id);
-        if (r.correct + r.wrong > 0) done++;
-        if (isMastered(r)) mastered++;
-        if (r.review) review++;
-        if (r.noReview) noReview++;
-        if (r.level === 'EASY') easy++;
-        if (r.level === 'MEDIUM') medium++;
-        if (r.level === 'HARD') hard++;
-        correct += r.correct; wrong += r.wrong;
+        if (r.correct + r.wrong > 0) n.done++;
+        if (isMastered(r)) n.mastered++;
+        if (r.review) n.review++;
+        if (r.noReview) n.noReview++;
+        if (['EASY', 'MEDIUM', 'HARD'].includes(r.level)) n[r.level]++;
+        n.correct += r.correct; n.wrong += r.wrong;
     }
-    const rate = correct + wrong ? Math.round(correct / (correct + wrong) * 100) + '%' : '—';
+    const none = list.length - n.EASY - n.MEDIUM - n.HARD;
+    const rate = n.correct + n.wrong ? Math.round(n.correct / (n.correct + n.wrong) * 100) + '%' : '—';
+    const pct = v => list.length ? (v / list.length * 100).toFixed(2) + '%' : '0';
+    const stat = (icon, label, value, sub = '') => `<div class="stat"><div class="stat-label">${icon} ${label}</div><b>${value}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
     $('stats').innerHTML =
-        `<span>符合出題規則 <b>${allQuestions.filter(matches).length}</b></span>` +
-        `<span>題數 <b>${scope.length}</b></span>` +
-        `<span>已作答 <b>${done}</b></span>` +
-        `<span>已記住 <b>${mastered}</b></span>` +
-        `<span>加強複習 <b>${review}</b> ・ 暫停複習 <b>${noReview}</b></span>` +
-        `<span>EASY <b>${easy}</b> ・ MEDIUM <b>${medium}</b> ・ HARD <b>${hard}</b></span>` +
-        `<span>累計答對率 <b>${rate}</b></span>`;
+        `<div class="stats-head"><span class="stats-main">${ICONS.matched} 符合出題規則 <b>${list.length}</b> <small>/ ${total} 題</small></span>` +
+        (list.length ? '' : `<span class="stats-note">沒有符合條件的題目</span>`) + `</div>` +
+        `<div class="stats-grid">` +
+        stat(ICONS.answered, '已作答', n.done, `${ICONS.new} 未作答 ${list.length - n.done}`) +
+        stat(ICONS.mastered, '已記住', n.mastered) +
+        stat(ICONS.review, '加強複習', n.review, `${ICONS.noReview} 暫停複習 ${n.noReview}`) +
+        stat(ICONS.rate, '累計答對率', rate, `答對 ${n.correct} ・ 答錯 ${n.wrong}`) +
+        `</div>` +
+        `<div class="level-bar" aria-hidden="true">` +
+        ['EASY', 'MEDIUM', 'HARD'].map(k => `<span class="lv-${k.toLowerCase()}" style="width:${pct(n[k])}"></span>`).join('') +
+        `<span class="lv-none" style="width:${pct(none)}"></span></div>` +
+        `<div class="level-legend">` +
+        ['EASY', 'MEDIUM', 'HARD'].map(k => `<span>${ICONS[k]} ${k} <b>${n[k]}</b></span>`).join('') +
+        `<span>${ICONS.none} 未分級 <b>${none}</b></span></div>`;
 }
 
 function readThreshold() { return DEFAULT_THRESHOLD; }   // 目前固定，輸入框已停用

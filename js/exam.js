@@ -60,6 +60,7 @@ function startExam() {
     buildExamGrid();
     tickExam();
     renderExamQuestion();
+    $('exam').scrollIntoView({ block: 'start' });   // 開始後畫面以題目為主，不用自己往下捲
 }
 
 function tickExam() {
