@@ -419,6 +419,25 @@ describe('本輪檢討', () => {
         assert.equal(await page.$('#round-review-open'), null);
         await page.closeContext();
     });
+
+    test('其他選項淡化、選錯的加刪除線；錯題重測只出本輪答錯的題目', async () => {
+        const page = await openPage();
+        await playRound(page);
+        await page.click('#round-dialog-review');
+        const styles = await page.$$eval('#rr-list .qopts li', ls => ls.map(l => [l.className, getComputedStyle(l).opacity, getComputedStyle(l).textDecorationLine]));
+        assert.deepEqual(styles, [['mine', '0.6', 'line-through'], ['', '0.45', 'none'], ['', '0.45', 'none'], ['ans', '1', 'none']]);
+        assert.equal(await text(page, '#rr-retry'), '🔁 錯題重測（1 題）');
+        await page.click('#rr-retry');
+        assert.deepEqual(await page.evaluate(() => [queue.map(q => q.num), session.limit, settings.limit]), [[1], 1, '']);
+        assert.equal(await page.$eval('#round-review', e => e.hidden), true);
+        await page.keyboard.press('4');
+        await page.keyboard.press('Enter');
+        assert.match(await text(page, '.result-card'), /錯題重測完成 100 \/ 100/);
+        // 這輪沒有答錯：不顯示錯題重測
+        await page.click('#round-dialog-review');
+        assert.equal(await page.$eval('#rr-retry', e => e.hidden), true);
+        await page.closeContext();
+    });
 });
 
 describe('題目總覽', () => {
@@ -657,10 +676,11 @@ describe('題庫與 id 轉換', () => {
         const page = await openPage();
         const r = await page.evaluate(() => [...document.querySelectorAll('#f-source optgroup')].map(g => [g.label, [...g.children].map(o => [o.textContent, o.title])]));
         assert.deepEqual(r, [
-            ['組合題庫', [['金融市場常識與職業道德測驗', '包含：職業道德（2024）、金融市場常識（2024）']]],
-            ['單一題庫', [['職業道德（2024）', ''], ['金融市場常識（2024）', '']]],
+            ['組合題庫', [['金融市場常識與職業道德測驗（1120 題）', '包含：職業道德-2024（616 題）、金融市場常識-2024（504 題）']]],
+            ['單一題庫', [['職業道德-2024（616 題）', ''], ['金融市場常識-2024（504 題）', '']]],
         ]);
-        assert.equal(await page.$eval('#f-source', e => e.title), '組合：職業道德（2024）、金融市場常識（2024）');
+        assert.equal(await page.$eval('#f-source', e => e.title), '組合：職業道德-2024（616 題）、金融市場常識-2024（504 題）');
+        assert.equal(await text(page, '.brand-sub'), '金融市場常識與職業道德測驗');
         await page.select('#f-source', await page.evaluate(() => sourceList().find(s => !s.combo).id));
         assert.equal(await page.$eval('#f-source', e => e.title), '');
         await page.closeContext();

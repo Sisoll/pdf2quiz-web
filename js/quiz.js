@@ -80,23 +80,30 @@ function setRunning(running) {
     $('start-btn').disabled = false;
     if (running) $('start-info').textContent = '測驗進行中，改條件會先詢問要不要結束本輪';
 }
-function start() {
+/* retry：錯題重測時直接用這些題目出題，不看目前的出題設定 */
+function start(retry) {
     if (session) return;
-    readFilters();
-    buildQueue();
-    const jump = parseInt($('f-jump').value, 10);
-    if (jump) {
-        const idx = queue.findIndex(q => q.num === jump);
-        if (idx < 0) { alert(`目前的條件裡沒有第 ${jump} 題`); return; }
-        queue = queue.slice(idx).concat(queue.slice(0, idx));   // 從這一題開始
-        $('f-jump').value = '';
+    let limit;
+    if (Array.isArray(retry)) {
+        queue = retry.slice();
+        limit = queue.length;
+    } else {
+        readFilters();
+        buildQueue();
+        const jump = parseInt($('f-jump').value, 10);
+        if (jump) {
+            const idx = queue.findIndex(q => q.num === jump);
+            if (idx < 0) { alert(`目前的條件裡沒有第 ${jump} 題`); return; }
+            queue = queue.slice(idx).concat(queue.slice(0, idx));   // 從這一題開始
+            $('f-jump').value = '';
+        }
+        limit = parseInt(settings.limit, 10) || null;
+        if (limit) queue = queue.slice(0, limit);
     }
-    const limit = parseInt(settings.limit, 10) || null;
-    if (limit) queue = queue.slice(0, limit);
     if (!queue.length) { renderIdle(); return; }
-    session = { limit, round: 1, answers: {}, answered: 0, correct: 0, skipped: 0, startedAt: Date.now() };
-    lastResult = null;
     pos = 0;
+    session = { limit, retry: Array.isArray(retry), round: 1, answers: {}, tries: {}, answered: 0, correct: 0, skipped: 0, startedAt: Date.now() };
+    lastResult = null;
     setRunning(true);
     $('round-review').hidden = true;
     render();
@@ -104,6 +111,7 @@ function start() {
 }
 function finish(reason) {
     if (!session) return;
+    if (session.retry) reason = '錯題重測' + reason;
     lastResult = { ...session, reason, endedAt: Date.now() };
     session = null;
     queue = [];
@@ -218,7 +226,9 @@ function answer(pick) {
     lastAnswer = { qid: q.id, key, counted, prevState, ok };   // 給「復原」用
     // 先以 MEDIUM 計分，答完選難度時再更新這一筆
     const sec = Math.round((Date.now() - shownAt) / 100) / 10;   // 作答秒數，計分時加權用
-    r.history.push({ t: new Date().toISOString(), pick, ok, level: 'MEDIUM', sec });
+    const entry = { t: new Date().toISOString(), pick, ok, level: 'MEDIUM', sec };
+    r.history.push(entry);
+    (session.tries[q.id] ||= []).push(entry);   // 本輪檢討用（選難度時改的是同一筆）
     recompute(r);
     saveRecords();
 
@@ -243,6 +253,7 @@ function undoAnswer() {
     const r = rec(q.id);
     r.history.pop();
     recompute(r);
+    session.tries[q.id].pop();
     if (lastAnswer.counted) {
         session.answered--;
         if (lastAnswer.ok) session.correct--;
@@ -296,10 +307,9 @@ function prev() { if (session && !advancing && pos > 0) { pos--; render(); } }
 /* ---------- 本輪檢討 ---------- */
 const ROUND_FILTERS = [['wrong', `${ICONS.everWrong} 答錯`], ['review', `${ICONS.review} 加強複習`], ['hard', `${ICONS.HARD} HARD`], ['all', `${ICONS.answered} 全部`]];
 let roundFilter = 'wrong';
-/* 本輪作答過的題目（依作答順序），從作答歷程取出本輪的每一次作答；復原掉的作答不在歷程裡 */
+/* 本輪作答過的題目（依作答順序）與本輪的每一次作答；復原掉的作答已移除 */
 function roundReviewItems(r) {
     if (!r) return [];
-    const from = Math.floor(r.startedAt / 1000) * 1000;   // 存檔的時間只到秒
     const byId = new Map(allQuestions.map(q => [q.id, q]));
     const seen = new Set(), items = [];
     for (const [key, v] of Object.entries(r.answers)) {
@@ -307,7 +317,7 @@ function roundReviewItems(r) {
         if (v === 'skip' || seen.has(qid) || !byId.has(qid)) continue;
         seen.add(qid);
         const rec = peek(qid);
-        const tries = rec.history.filter(h => !h.src && Date.parse(h.t) >= from && Date.parse(h.t) <= r.endedAt);
+        const tries = r.tries[qid] || [];
         if (tries.length) items.push({ q: byId.get(qid), tries, wrong: tries.some(h => !h.ok), hard: tries.some(h => h.level === 'HARD'), review: !!rec.review });
     }
     return items;
@@ -345,6 +355,10 @@ function renderRoundReview() {
         chip.onclick = () => { roundFilter = key; renderRoundReview(); };
         chips.appendChild(chip);
     }
+    const wrong = items.filter(it => it.wrong).map(it => it.q);
+    $('rr-retry').hidden = !wrong.length;
+    $('rr-retry').textContent = `🔁 錯題重測（${wrong.length} 題）`;
+    $('rr-retry').onclick = () => start(wrong);
     const list = $('rr-list');
     list.innerHTML = '';
     const shown = items.filter(it => roundFilter === 'all' || it[roundFilter]);

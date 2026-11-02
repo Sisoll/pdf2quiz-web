@@ -391,7 +391,9 @@ details.rules ul { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; }
 .show-answers .qopts li.ans, .qitem.reveal .qopts li.ans, .qitem.show .qopts li.ans {
     background: var(--answer-bg); border: 3px solid var(--answer-border); padding: 5px 10px; font-weight: 700; color: var(--answer-text);
 }
-.qitem.show .qopts li.mine { background: var(--bad-soft); border-color: var(--bad); color: var(--bad-text); }
+/* 顯示答案時淡化其他選項，凸顯正確答案；選錯的再加刪除線 */
+.show-answers .qopts li:not(.ans), .qitem.reveal .qopts li:not(.ans), .qitem.show .qopts li:not(.ans) { opacity: 0.45; }
+.qitem.show .qopts li.mine { background: var(--bad-soft); border-color: var(--bad); color: var(--bad-text); text-decoration: line-through; opacity: 0.6; }
 .qtrail { margin-top: 10px; font-size: 12px; color: var(--text-3); }
 
 /* 分頁列 */
@@ -568,6 +570,7 @@ details.rules ul { margin: 8px 0 0; padding-left: 20px; line-height: 1.8; }
 .round-review { margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--border); }
 .round-review-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 12px; }
 .round-review-title { font-weight: 800; }
+.round-review-head #rr-retry { margin-left: auto; }
 .rr-tries { margin-top: 10px; font-size: 13px; color: var(--text-2); }
 .round-review .chip.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-text); }
 

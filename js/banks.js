@@ -83,11 +83,14 @@ function unpackBank(data) {
 function sourceList() {
     const combos = [...(CATALOG.combos || []).map(c => ({ ...c, builtin: true })), ...userCombos].filter(c => c.banks.some(id => banks[id]))
         .map(c => ({ id: c.id, name: c.name, bankIds: c.banks.filter(id => banks[id]), exam: c.exam || {}, builtin: !!c.builtin, combo: true }));
-    const singles = Object.values(banks).map(({ bank }) => ({ id: bank.id, name: `${bank.name}（${bank.year || '未設定年份'}）`, bankIds: [bank.id], exam: {}, combo: false }));
+    const singles = Object.values(banks).map(({ bank }) => ({ id: bank.id, name: bankLabel(bank), bankIds: [bank.id], exam: {}, combo: false }));
     return [...combos, ...singles];
 }
+/* 題庫名稱：年份用「-」接在名稱後面（沒有年份就只有名稱）；括號裡是題數 */
+const bankLabel = bank => bank.year ? `${bank.name}-${bank.year}` : bank.name;
+const bankLabelCount = id => `${bankLabel(banks[id].bank)}（${banks[id].questions.length} 題）`;
 /* 組合包含哪些題庫，給滑鼠提示用 */
-const sourceBanksText = src => src.bankIds.map(id => `${banks[id].bank.name}（${banks[id].bank.year || '未設定年份'}）`).join('、');
+const sourceBanksText = src => src.bankIds.map(bankLabelCount).join('、');
 function findSource(id) {
     const list = sourceList();
     return list.find(s => s.id === id) || list.find(s => s.id === CATALOG.defaultCombo) || list[0] || null;

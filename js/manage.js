@@ -352,7 +352,7 @@ function renderCombos() {
         const main = el('div', 'item-main');
         const ex = c.exam || {};
         const parts = el('div', 'item-pills');
-        parts.append(...c.bankIds.map(id => pill(`${banks[id].bank.name}（${banks[id].bank.year || '未設定年份'}）`, 'soft')));
+        parts.append(...c.bankIds.map(id => pill(bankLabelCount(id), 'soft')));
         main.append(titleLine(c.name, pill(c.builtin ? '內建' : '自建', c.builtin ? 'builtin' : 'user')), parts,
             el('div', 'item-sub', `⏱️ 模擬考各科 ${ex.perCategory ?? 50} 題、${ex.pass ?? 70} 分及格${ex.minutes ? `、${ex.minutes} 分鐘` : '、不限時間'}`),
             progressLine(c.bankIds.flatMap(id => banks[id].questions)));
@@ -370,7 +370,7 @@ function renderCombos() {
     for (const { bank } of Object.values(banks)) {
         const label = el('label', 'check');
         const box2 = Object.assign(el('input'), { type: 'checkbox', value: bank.id });
-        label.append(box2, document.createTextNode(` ${bank.name}（${bank.year || '未設定年份'}）`));
+        label.append(box2, document.createTextNode(` ${bankLabelCount(bank.id)}`));
         picks.appendChild(label);
     }
 }

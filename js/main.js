@@ -9,7 +9,7 @@ let answeredInView = false;
 let advancing = false;
 let shownAt = 0;         // 目前這題顯示的時間，用來算作答秒數
 let lastAnswer = null;   // 最近一次作答，給「復原」用
-let session = null;      // 進行中的一輪：{ limit, round, answers, answered, correct, skipped, startedAt }
+let session = null;      // 進行中的一輪：{ limit, retry, round, answers, tries, answered, correct, skipped, startedAt }
 let lastResult = null;   // 上一輪的成績
 let view = 'quiz';       // 目前的分頁：quiz（練習）或 browse（題目總覽）
 
@@ -51,7 +51,7 @@ function renderSourceSelect() {
     for (const [label, list] of [['組合題庫', sourceList().filter(s => s.combo)], ['單一題庫', sourceList().filter(s => !s.combo)]]) {
         if (!list.length) continue;
         const group = Object.assign(document.createElement('optgroup'), { label });
-        for (const s of list) group.appendChild(Object.assign(document.createElement('option'), { value: s.id, textContent: s.name, title: s.combo ? `包含：${sourceBanksText(s)}` : '' }));
+        for (const s of list) group.appendChild(Object.assign(document.createElement('option'), { value: s.id, textContent: `${s.name}（${sourceQuestions(s).length} 題）`, title: s.combo ? `包含：${sourceBanksText(s)}` : '' }));
         sel.appendChild(group);
     }
 }
