@@ -1,6 +1,9 @@
 /* 練習：出題、作答與一輪測驗 */
 function renderMeta(q) {
     const r = peek(q.id);
+    // 解析等於答案，答完才顯示
+    $('note-slot').hidden = !answeredInView;
+    if ($('note-slot').firstChild) $('note-slot').firstChild.refresh();
     document.querySelectorAll('.remark[data-level]').forEach(b => b.classList.toggle('on', r.level === b.dataset.level));
     $('review-btn').classList.toggle('on', !!r.review);
     $('review-btn').title = r.review ? '移除加強複習（快捷鍵 R）' : '標記為加強複習，標記期間不算已記住（快捷鍵 R）';
@@ -52,15 +55,17 @@ function renderSessionBar() {
     const bar = $('session-bar');
     if (!session) { bar.hidden = true; return; }
     bar.hidden = false;
-    const n = session.limit ? `${session.answered} / ${session.limit}` : `${session.answered}`;
+    // 數字固定寬度：有題數時以題數的位數為準，題數不限預留 3 位數
+    const w = session.limit ? String(session.limit).length : 3;
+    const n = session.limit ? `${fixNum(session.answered, w)} / ${session.limit}` : fixNum(session.answered, w);
     // 進度：有題數時看已答幾題，題數不限時看這一輪出到第幾題
     const done = session.limit ? session.answered / session.limit : (pos + 1) / Math.max(queue.length, 1);
     bar.innerHTML =
         `<div class="session-progress" title="${session.limit ? '本輪進度' : `第 ${session.round} 輪：${pos + 1} / ${queue.length}`}"><span style="width:${Math.min(100, done * 100).toFixed(1)}%"></span></div>` +
-        `<span>本輪得分 <b class="pts">${pct(session.correct, session.answered)}</b> / 100</span>` +
-        `<span>已答 <b>${n}</b> 題</span>` +
-        `<span>答對 <b>${session.correct}</b></span>` +
-        `<span>答錯 <b>${session.answered - session.correct}</b></span>` +
+        `<span>本輪得分 <b class="pts fixnum" style="min-width:3ch">${pct(session.correct, session.answered)}</b> / 100</span>` +
+        `<span>已答 ${n} 題</span>` +
+        `<span>答對 ${fixNum(session.correct, w)}</span>` +
+        `<span>答錯 ${fixNum(session.answered - session.correct, w)}</span>` +
         (session.skipped ? `<span>略過 <b>${session.skipped}</b></span>` : '') +
         (session.round > 1 ? `<span>第 <b>${session.round}</b> 輪</span>` : '');
 }
@@ -142,7 +147,7 @@ function endRoundForChange() {
 function render() {
     renderStats();
     renderSessionBar();
-    const quizEls = ['.remark', '#score', '#nav'];
+    const quizEls = ['.remark', '#score', '#copy-slot', '#nav'];
     const showQuizEls = show => quizEls.forEach(sel => document.querySelectorAll(sel).forEach(el => el.hidden = !show));
     if (!session) {
         renderIdle();
@@ -373,6 +378,7 @@ function roundReviewCard({ q, tries, wrong, review }) {
         el('span', 'tag ' + (wrong ? 'everWrong' : 'mastered'), wrong ? '答錯' : '答對'),
         el('span', `tag ${last.level}`, last.level));
     if (review) head.appendChild(el('span', 'tag review', '加強複習'));
+    head.append(copyQuestionButton(() => q), noteButton(() => q));
     card.append(head, el('div', 'qtext', q.question));
     const picks = new Set(tries.filter(h => !h.ok).map(h => h.pick));
     const opts = el('ol', 'qopts');

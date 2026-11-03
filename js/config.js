@@ -7,7 +7,9 @@ const HISTORY_LIMIT = 200;   // 每題保留的作答歷史筆數，更早的會
 
 /* ---------- 計分規則 ---------- */
 const SCORING = {
-    base: { EASY: 2.5, MEDIUM: 1.5, HARD: 1.0 },   // 難度係數
+    // 難度係數：EASY 答對一次（平均速度）就到 5（已記住），不再花時間重複練；
+    // MEDIUM 答對兩次就到 5（答得慢一些也一樣）；HARD 維持要連續答對多次
+    base: { EASY: 5, MEDIUM: 2.5, HARD: 1.0 },
     streak: [1, 1.5, 2],                            // 連續第 1、2、3 次以後的加成
     cap: 8,                                         // 分數上限
     wrongFactor: 0.5,                               // 答錯：分數 × 0.5 − 1
@@ -30,6 +32,8 @@ const RANDOM_WEIGHT = {
     wrongMax: 5,                                   // 答錯次數最多算 5 次
     level: { EASY: 0.7, MEDIUM: 1, HARD: 1.5 },    // 難度：沒作答過的題目算 1
     boost: 1.5,
+    // 最近答過的題目排到最後（剛做過答對也不代表記住）；這些題目之間，答得越早的越前面
+    recentMs: 60 * 60 * 1000,
     modes: {                                       // 順序選項 → 加強哪一項
         random: null,
         randomNew: 'attempts',
@@ -43,7 +47,8 @@ const CONDITIONS = [
     { key: 'new', label: '未作答', group: '進度' },
     { key: 'answered', label: '已作答', group: '進度' },
     { key: 'mastered', label: '已記住', group: '進度' },
-    { key: 'everWrong', label: '曾經答錯', group: '進度' },
+    { key: 'everWrong', label: '曾經答錯', group: '答錯' },
+    { key: 'lastWrong', label: '上次答錯', group: '答錯' },
     { key: 'EASY', label: 'EASY', group: '難度' },
     { key: 'MEDIUM', label: 'MEDIUM', group: '難度' },
     { key: 'HARD', label: 'HARD', group: '難度' },
@@ -51,14 +56,51 @@ const CONDITIONS = [
     { key: 'noReview', label: '暫停複習', group: '標記' },
 ];
 /* 條件與統計共用的圖示；難度用紅綠燈 */
-const ICONS = { matched: '🎯', new: '🆕', answered: '📝', mastered: '🧠', everWrong: '❌', EASY: '🟢', MEDIUM: '🟡', HARD: '🔴', none: '⚪', review: '📌', noReview: '⏸️', rate: '✅', history: '📈' };
+const ICONS = { matched: '🎯', new: '🆕', answered: '📝', mastered: '🧠', everWrong: '❌', lastWrong: '⚠️', EASY: '🟢', MEDIUM: '🟡', HARD: '🔴', none: '⚪', review: '📌', noReview: '⏸️', rate: '✅', history: '📈' };
 
 const $ = id => document.getElementById(id);
+/* 會跳動的數字固定寬度（等寬數字、靠右），數字位數變了旁邊的東西也不會移動；width 是最多幾個字元 */
+const fixNum = (v, width) => `<b class="fixnum" style="min-width:${width}ch">${v}</b>`;
+/* 時間 m:ss */
+function clockText(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
 function el(tag, className, text) {
     const e = document.createElement(tag);
     if (className) e.className = className;
     if (text !== undefined) e.textContent = text;
     return e;
+}
+/* 複製文字：先用 Clipboard API，不能用時（例如雙擊開啟的頁面被瀏覽器擋下）改用選取後複製 */
+async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* 改用下面的方式 */ }
+    const ta = Object.assign(document.createElement('textarea'), { value: text });
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+    return ok;
+}
+/* 「複製題目」按鈕：只複製題目文字（不含題號與選項），方便貼到外面搜尋；getQ 回傳要複製的題目 */
+function copyQuestionButton(getQ, label = '📋 複製題目') {
+    const b = el('button', 'copy-btn', label);
+    b.type = 'button';
+    b.title = '複製題目文字，可以貼到外面搜尋';
+    b.onclick = async e => {
+        e.stopPropagation();
+        const q = getQ();
+        if (!q) return;
+        const ok = await copyText(q.question);
+        const iconOnly = label === '📋';
+        b.textContent = ok ? (iconOnly ? '✓' : '✓ 已複製') : (iconOnly ? '✗' : '複製失敗');
+        b.classList.toggle('done', ok);
+        clearTimeout(b.resetTimer);
+        b.resetTimer = setTimeout(() => { b.textContent = label; b.classList.remove('done'); }, 1200);
+    };
+    return b;
 }
 const round2 = n => Math.round(n * 100) / 100;
 const streakMult = s => SCORING.streak[Math.min(s, SCORING.streak.length) - 1];

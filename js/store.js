@@ -26,14 +26,15 @@ function unpackHistory(a) {
    作答紀錄依題庫分組，每題一列、只寫流水號；題目 id 不符合「題庫 id + 流水號」的（例如對不到題庫的舊 id）放在 other，原樣保留
    分數、答對次數等算得出來的欄位不存，載入時重算 */
 const RECORDS_FORMAT = 'pdf2quiz-records';
-const ITEM_COLUMNS = ['h', 'review', 'noReview', 'markAt', 'base'];
-const EXAM_COLUMNS = ['at', 'durationMs', 'timeUp', 'passScore', 'pass', 'recorded', 'subjects'];
+const ITEM_COLUMNS = ['h', 'review', 'noReview', 'markAt', 'base', 'tag'];   // tag：[難度 E/M/H, 時間]，交卷檢討改的難度標籤，舊紀錄沒有
+const EXAM_COLUMNS = ['at', 'durationMs', 'timeUp', 'passScore', 'pass', 'recorded', 'subjects', 'items'];   // items：[題目 id, 選的答案]，舊紀錄沒有
 const SUBJECT_COLUMNS = ['category', 'n', 'correct', 'score'];
 function packRecords(data = records) {
     const byBank = {}, other = [];
     for (const [id, r] of Object.entries(data.items)) {
-        const o = { h: r.history.map(packHistory), review: r.review ? 1 : 0, noReview: r.noReview ? 1 : 0, markAt: r.markAt || null, base: r.base || null };
-        if (!o.h.length && !o.review && !o.noReview && !o.markAt && !o.base) continue;   // 完全沒有資料的題目不存
+        const o = { h: r.history.map(packHistory), review: r.review ? 1 : 0, noReview: r.noReview ? 1 : 0, markAt: r.markAt || null, base: r.base || null,
+            tag: r.tag ? [LEVEL_CODE[r.tag.level], toSec(r.tag.at).toString(36)] : null };
+        if (!o.h.length && !o.review && !o.noReview && !o.markAt && !o.base && !o.tag) continue;   // 完全沒有資料的題目不存
         const k = splitQid(id);
         if (k) (byBank[k.bankId] = byBank[k.bankId] || []).push({ seq: k.seq, ...o });
         else other.push({ id, ...o });
@@ -48,10 +49,14 @@ function packRecords(data = records) {
 /* 版本 4 轉回 { items, exams }，之後和舊版走同一條轉換流程 */
 function unpackRecords(data) {
     const items = {};
-    const item = row => ({ h: row.h || [], review: !!row.review, noReview: !!row.noReview, markAt: row.markAt || null, ...(row.base ? { base: row.base } : {}) });
+    const item = row => ({ h: row.h || [], review: !!row.review, noReview: !!row.noReview, markAt: row.markAt || null, ...(row.base ? { base: row.base } : {}),
+        ...(Array.isArray(row.tag) ? { tag: { level: LEVEL_NAME[row.tag[0]] || 'MEDIUM', at: new Date(parseInt(row.tag[1], 36) * 1000).toISOString() } } : {}),
+        // 開發中的版本曾把解析存在紀錄裡（note 欄位），讀進來後由 migrateRecords 搬到解析
+        ...(Array.isArray(row.note) ? { note: { text: String(row.note[0] ?? ''), at: new Date(parseInt(row.note[1], 36) * 1000).toISOString() } } : {}) });
     for (const [bankId, t] of Object.entries(data.banks || {})) for (const row of tableRows(t)) items[qid(bankId, row.seq)] = item(row);
     for (const row of tableRows(data.other)) items[row.id] = item(row);
-    const exams = tableRows(data.exams).map(x => ({ ...x, subjects: Array.isArray(x.subjects) ? x.subjects : tableRows(x.subjects) }));
+    // 舊的模擬考沒有記下題目，不留 items 欄位
+    const exams = tableRows(data.exams).map(({ items, ...x }) => ({ ...x, subjects: Array.isArray(x.subjects) ? x.subjects : tableRows(x.subjects), ...(items ? { items } : {}) }));
     return { version: data.version, updatedAt: data.updatedAt, items, exams };
 }
 const isRecordData = data => !!data && (data.format === RECORDS_FORMAT || typeof data.items === 'object');
@@ -118,7 +123,9 @@ function migrateRecords(data) {
         }
     }
     data.version = RECORD_VERSION;
-    for (const r of Object.values(data.items)) {
+    for (const [id, r] of Object.entries(data.items)) {
+        // 解析不放在作答紀錄裡，搬到解析（js/notes.js；題庫管理頁也有載入）
+        if (r.note) { if (typeof adoptRecordNote === 'function') adoptRecordNote(id, r.note); delete r.note; }
         r.history = r.history || [];
         // 「不清楚」已併入「加強複習」
         if ('unclear' in r) { r.review = !!(r.review || r.unclear); delete r.unclear; }
@@ -166,7 +173,7 @@ function onDataChanged(fn) {
     });
 }
 function loadSettings() {
-    const defaults = { source: '', category: 'all', include: [], exclude: ['noReview'], order: 'seq', limit: '', threshold: DEFAULT_THRESHOLD, min: '', max: '', browseSort: 'num', showAnswers: false, scoringVersion: 2 };
+    const defaults = { source: '', category: 'all', include: [], exclude: ['noReview'], order: 'seq', limit: '', threshold: DEFAULT_THRESHOLD, min: '', max: '', browseSort: 'num', showAnswers: false, examPick: 'random', scoringVersion: 2 };
     let s;
     try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { s = {}; }
     // 舊版的單選「題目範圍」轉成「包含」
@@ -306,7 +313,9 @@ function mergeRecordSets(a, b) {
             markAt = null;
         }
         const base = ra.base || rb.base;   // 超過保留上限時濃縮的舊資料（極少見）
-        out.items[id] = { history, review, noReview, markAt, ...(base ? { base } : {}) };
+        // 難度標籤以較晚改的為準
+        const tag = [ra.tag, rb.tag].filter(Boolean).sort((x, y) => Date.parse(y.at) - Date.parse(x.at))[0];
+        out.items[id] = { history, review, noReview, markAt, ...(base ? { base } : {}), ...(tag ? { tag: { ...tag } } : {}) };
     }
     const exams = new Map();
     for (const x of [...(a.exams || []), ...(b.exams || [])]) exams.set(x.at, x);

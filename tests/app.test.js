@@ -14,10 +14,13 @@ describe('計分公式', () => {
     test('各種作答順序的分數與已記住', async () => {
         const page = await openPage();
         const run = codes => page.evaluate(h => { const r = { history: h }; recompute(r); return { trail: r.history.map(x => x.s), score: r.score, mastered: isMastered(r) }; }, history(...codes));
-        assert.deepEqual((await run(['OH', 'OM', 'OM'])).trail, [1, 3.25, 6.25]);
-        assert.equal((await run(['OH', 'OM', 'OM'])).mastered, true);
-        assert.deepEqual((await run(['OE', 'OE'])).trail, [2.5, 6.25]);
-        assert.equal((await run(['OH', 'OE'])).mastered, false);              // 1 → 4.75，差一點
+        assert.deepEqual((await run(['OE'])).trail, [5]);                      // EASY 答對一次就記住
+        assert.equal((await run(['OE'])).mastered, true);
+        assert.deepEqual((await run(['OM', 'OM'])).trail, [2.5, 6.25]);       // MEDIUM 答對兩次就記住
+        assert.equal((await run(['OM', 'OM'])).mastered, true);
+        assert.deepEqual((await run(['OH', 'OM', 'OM'])).trail, [1, 4.75, 8]);
+        assert.equal((await run(['OH', 'OM'])).mastered, false);              // 1 → 4.75，差一點
+        assert.deepEqual((await run(['XE', 'OE'])).trail, [-1, 4]);          // 答錯過的 EASY 答對一次還不夠
         assert.deepEqual((await run(['OH', 'OH', 'OH', 'OH'])).trail, [1, 2.5, 4.5, 6.5]);
         assert.equal((await run(['OE', 'OE', 'OE', 'OE', 'OE'])).score, 8);   // 上限 8
         assert.equal((await run(['OE', 'OE', 'OE', 'OE', 'XM'])).score, 3);   // 8 答錯 → 3
@@ -38,7 +41,7 @@ describe('計分公式', () => {
             recompute(r);
             return r.history.map(h => [h.s, !!h.cool]);
         });
-        assert.deepEqual(r, [[1.5, false], [1.5, true], [-0.25, false]]);
+        assert.deepEqual(r, [[2.5, false], [2.5, true], [0.25, false]]);
         await page.closeContext();
     });
 
@@ -49,14 +52,14 @@ describe('計分公式', () => {
         const trail = await page.evaluate(() => {
             const t0 = Date.UTC(2026, 0, 1), hour = 3600e3;
             const r = { history: [
-                { t: new Date(t0).toISOString(), ok: true, level: 'EASY', sec: 2 },           // 2.5 × 1.4 = 3.5
-                { t: new Date(t0 + hour).toISOString(), ok: true, level: 'MEDIUM', sec: 36 },  // 1.5 × 1.5（連對）× 0.8 = 1.8
+                { t: new Date(t0).toISOString(), ok: true, level: 'HARD', sec: 2 },           // 1 × 1.4 = 1.4
+                { t: new Date(t0 + hour).toISOString(), ok: true, level: 'MEDIUM', sec: 36 },  // 2.5 × 1.5（連對）× 0.8 = 3
                 { t: new Date(t0 + 2 * hour).toISOString(), ok: false, level: 'MEDIUM', sec: 1 },   // 答錯不看速度
             ] };
             recompute(r);
             return r.history.map(h => h.s);
         });
-        assert.deepEqual(trail, [3.5, 5.3, 1.65]);
+        assert.deepEqual(trail, [1.4, 4.4, 1.2]);
         await page.closeContext();
     });
 
@@ -67,7 +70,7 @@ describe('計分公式', () => {
         await page.keyboard.press('4');
         const r = await page.evaluate(() => ({ sec: peek(Q('ETH-0001')).history[0].sec, s: peek(Q('ETH-0001')).score }));
         assert.ok(r.sec >= 1 && r.sec < 2, `sec=${r.sec}`);
-        assert.equal(r.s, 2.1);                                   // MEDIUM 1.5 × 1.4
+        assert.equal(r.s, 3.5);                                   // MEDIUM 2.5 × 1.4
         assert.match(await text(page, '#result'), /用時 1(\.\d)? 秒 ×1\.4/);
         const packed = await page.evaluate(() => [
             packHistory({ t: '2026-01-01T00:00:00Z', pick: 2, ok: true, level: 'EASY' }),
@@ -110,7 +113,7 @@ describe('舊版資料轉換', () => {
         });
         const r = await page.evaluate(() => ({ rec: records.items[Q('MKT-0001')], s: settings }));
         assert.equal(r.rec.history[1].level, 'EASY');        // 題目層級的難度改記在最近一次作答
-        assert.equal(r.rec.score, 5.25);                     // MEDIUM 1.5 → EASY 2.5 × 1.5
+        assert.equal(r.rec.score, 8);                        // MEDIUM 2.5 → EASY 5 × 1.5，到上限 8
         assert.equal(r.rec.review, true);                    // 不清楚 併入 加強複習
         assert.equal('unclear' in r.rec, false);
         assert.equal(r.s.threshold, 5);                      // 門檻固定 5
@@ -143,6 +146,19 @@ describe('出題條件', () => {
         assert.deepEqual(await count(page, ['EASY'], ['noReview']), ['1']);
         assert.deepEqual(await count(page, [], ['new', 'EASY']), ['2', '3', '4']);
         assert.deepEqual(await count(page, ['EASY'], ['EASY']), []);
+        await page.closeContext();
+    });
+
+    test('上次答錯只看最近一次作答；曾經答錯包含後來答對的', async () => {
+        const page = await openPage({ records: { version: 2, items: {
+            'ETH-0001': { history: history('XM', 'OM') },   // 錯過、上次答對
+            'ETH-0002': { history: history('OM', 'XH') },   // 上次答錯
+            'ETH-0003': { history: history('OE') },
+        } } });
+        assert.deepEqual(await count(page, ['lastWrong'], []), ['2']);
+        assert.deepEqual(await count(page, ['everWrong'], []), ['1', '2']);
+        assert.deepEqual(await count(page, ['everWrong'], ['lastWrong']), ['1']);
+        assert.match(await text(page, '#f-chips'), /上次答錯/);
         await page.closeContext();
     });
 
@@ -232,6 +248,27 @@ describe('出題條件', () => {
         await reloaded.closeContext();
     });
 
+    test('隨機順序：1 小時內答過的排到最後、越早答的越前面；超過 1 小時恢復正常', async () => {
+        const page = await openPage({ records });
+        const order = () => page.evaluate(() => {
+            settings.include = ['answered']; settings.exclude = []; settings.order = 'random';
+            buildQueue(); return queue.map(q => q.id.slice(-1)).join('');
+        });
+        await page.evaluate(() => { settings.include = []; settings.exclude = []; settings.order = 'seq'; settings.category = 'all'; });
+        await page.click('#start-btn');
+        for (const id of ['ETH-0004', 'ETH-0002']) {   // 先答 4、再答 2
+            await page.evaluate(id => { queue = [allQuestions.find(q => q.id === Q(id))]; pos = 0; render(); }, id);
+            await page.evaluate(() => answer(1));
+            await page.advance(60 * 1000);
+        }
+        for (let i = 0; i < 5; i++) assert.match(await order(), /^[135]{3}42$/);
+        await page.advance(60 * 60 * 1000);
+        const seen = new Set();
+        for (let i = 0; i < 30; i++) seen.add((await order()).slice(-2));
+        assert.ok(seen.size > 1);
+        await page.closeContext();
+    });
+
     test('弱點加權隨機：每題都會出現一次，只改變順序', async () => {
         const page = await openPage({ records });
         const r = await page.evaluate(() => {
@@ -295,7 +332,7 @@ describe('練習', () => {
         await page.keyboard.press('4');
         assert.match(await text(page, '#score'), /^\+[\d.]+（對 1 ・ 錯 0）$/);
         await page.keyboard.press('Enter');
-        assert.equal(await text(page, '#score'), '+1.5（對 1 ・ 錯 0）');   // 作答過的題目，作答前照樣顯示分數
+        assert.equal(await text(page, '#score'), '+2.5（對 1 ・ 錯 0）');   // 作答過的題目，作答前照樣顯示分數
         await page.closeContext();
     });
 
@@ -308,7 +345,7 @@ describe('練習', () => {
         await page.closeContext();
     });
 
-    test('標記：加強複習擋住已記住；和暫停複習互斥；作答前可以移除', async () => {
+    test('標記：加強複習擋住已記住；和暫停複習互斥；答完可以移除；作答前不顯示難度、分數與標記', async () => {
         const page = await openPage({ records: { version: 2, items: { 'ETH-0001': { history: history('OE', 'OE') } } } });
         await page.advance(3600e3);
         await page.click('#start-btn');
@@ -322,7 +359,11 @@ describe('練習', () => {
         await page.keyboard.press('Escape');
         await page.click('#round-dialog-skip');           // 中止後詢問要不要檢討：不用
         await page.click('.chip[data-key="noReview"]');   // 取消預設的「排除暫停複習」，這題才會出現
-        await page.click('#start-btn');           // 新的一輪：作答前點 × 移除
+        await page.click('#start-btn');           // 新的一輪：作答前看不到難度、分數與標記
+        const visible = () => page.evaluate(() => ['#noreview-btn', '.remark.easy', '#score'].map(s => !!document.querySelector(s).offsetParent));
+        assert.deepEqual(await visible(), [false, false, false]);
+        await page.keyboard.press('4');           // 答完才出現，點 × 移除
+        assert.deepEqual(await visible(), [true, true, true]);
         await page.click('#noreview-btn');
         assert.equal(await page.evaluate(() => peek(Q('ETH-0001')).noReview), false);
         await page.closeContext();
@@ -420,6 +461,128 @@ describe('本輪檢討', () => {
         await page.closeContext();
     });
 
+    test('紀錄檔裡舊版的解析會搬到解析，紀錄不再帶著；內建解析可以被使用者的修改蓋過', async () => {
+        const id = 'ETH-2024-NX89-0003';
+        const records = { format: 'pdf2quiz-records', version: 4, banks: { 'ETH-2024-NX89': { columns: ['seq', 'h', 'note'], rows: [[3, [['t0', 1, 1, 'M']], ['舊版解析', 't0']]] } }, exams: { columns: [], rows: [] } };
+        const page = await openPage({ records });
+        const r = await page.evaluate(id => [getNote(id) && getNote(id).text, 'note' in peek(id), JSON.stringify(packRecords()).includes('舊版解析'), peek(id).history.length], id);
+        assert.deepEqual(r, ['舊版解析', false, false, 1]);
+        // 內建解析：較晚的使用者修改優先
+        const b = await page.evaluate(async () => {
+            const id = Q('ETH-0004');
+            BUILTIN_NOTES[id] = { text: '內建', at: '2026-01-01T00:00:00.000Z' };
+            const before = getNote(id).text;
+            await setNote(id, '');
+            return [before, getNote(id), allNotes()[id].text];
+        });
+        assert.deepEqual(b, ['內建', null, '']);
+        await page.closeContext();
+    });
+
+    test('連結解析檔：開啟時合併檔案裡的解析，之後每次修改自動寫回；data/notes.js 的格式讀寫一致', async () => {
+        const page = await openPage();
+        const r = await page.evaluate(async () => {
+            const id = Q('ETH-0005');
+            // 假的檔案 handle：檔案裡有一題較新的解析
+            let content = notesFileContent('notes.js').replace('"notes": {', `"notes": {\n  "${id}": { "text": "檔案裡的", "at": "2030-01-01T00:00:00.000Z" },`);
+            const handle = { name: 'notes.js', getFile: async () => ({ text: async () => content }), createWritable: async () => ({ write: async t => { content = t; }, close: async () => {} }) };
+            await linkNotesHandle(handle, { load: true });
+            const merged = getNote(id).text;
+            await setNote(Q('ETH-0006'), '新寫的');
+            await new Promise(res => setTimeout(res, 500));
+            const back = parseNotesFile(content).notes;
+            return [merged, back[id].text, back[Q('ETH-0006')].text, content.startsWith('// 由頁面'), $('notes-file-status').className];
+        });
+        assert.deepEqual(r, ['檔案裡的', '檔案裡的', '新寫的', true, 'linked']);
+        await page.closeContext();
+    });
+
+    test('解析彈窗可以拖標題移動、可以調整大小；重新打開回到中間', async () => {
+        const page = await openPage();
+        await page.setViewport({ width: 1000, height: 800 });
+        await page.click('.tab[data-view="browse"]');
+        await page.click('#browse-list .qitem:first-child .note-btn');
+        const rect = () => page.$eval('#note-dialog', d => { const r = d.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.height)]; });
+        const [x0, y0, h0] = await rect();
+        const t = await page.$eval('#note-title', e => { const r = e.getBoundingClientRect(); return [r.left + 20, r.top + 5]; });
+        await page.mouse.move(t[0], t[1]);
+        await page.mouse.down();
+        await page.mouse.move(t[0] - 100, t[1] - 50, { steps: 5 });
+        await page.mouse.up();
+        assert.deepEqual(await rect(), [x0 - 100, y0 - 50, h0]);   // 移動後大小不變
+        assert.equal(await page.$eval('#note-dialog', d => getComputedStyle(d).resize), 'both');
+        await page.evaluate(() => $('note-dialog').close());
+        await page.click('#browse-list .qitem:first-child .note-btn');
+        assert.deepEqual(await rect(), [x0, y0, h0]);
+        await page.closeContext();
+    });
+
+    test('複製題目：練習中、本輪檢討、題目總覽都可以只複製題目文字', async () => {
+        const page = await openPage();
+        const ctx = page.browserContext();
+        await ctx.overridePermissions('file://', ['clipboard-read', 'clipboard-write', 'clipboard-sanitized-write']).catch(() => {});
+        // 不管用哪一種方式複製，都記下寫進剪貼簿的文字
+        await page.evaluate(() => { window.__copied = []; const orig = copyText; copyText = async t => { window.__copied.push(t); return orig(t); }; });
+        await page.click('#start-btn');
+        await page.click('#copy-slot .copy-btn');
+        await page.waitForFunction(() => $('copy-slot').firstChild.textContent === '✓ 已複製');
+        await page.keyboard.press('1');
+        await page.keyboard.press('Escape');
+        await page.click('#round-dialog-review');
+        await page.click('#rr-list .copy-btn');
+        await page.click('.tab[data-view="browse"]');
+        await page.click('#browse-list .qitem .copy-btn');
+        const q1 = await page.evaluate(() => allQuestions[0].question);
+        assert.deepEqual(await page.evaluate(() => window.__copied), [q1, q1, q1]);
+        await page.closeContext();
+    });
+
+    test('解析：提供解析後按鈕變成查看說明，可以編輯、刪除；練習答完才出現；和作答紀錄分開存', async () => {
+        const page = await openPage();
+        await page.click('#start-btn');
+        assert.equal(await page.$eval('#note-slot', e => e.hidden), true);   // 作答前不顯示
+        await page.keyboard.press('1');
+        assert.equal(await page.$eval('#note-slot .note-btn', e => e.textContent), '✏️ 提供解析');
+        await page.click('#note-slot .note-btn');
+        await page.type('#note-input', '第一版解析\n第二行');
+        await page.keyboard.press('2');                       // 在輸入框打字不會被當成作答快捷鍵
+        await page.click('#note-save');
+        await page.waitForFunction(() => !$('note-view').hidden);
+        assert.equal(await page.$eval('#note-text', e => e.textContent), '第一版解析\n第二行2');
+        await page.click('#note-close');
+        assert.equal(await page.$eval('#note-slot .note-btn', e => e.textContent), '📖 查看說明');
+        const qid = await page.evaluate(() => queue[pos].id);
+        // 題目總覽的同一題也是「查看說明」；編輯
+        await page.keyboard.press('Escape');
+        await page.click('#round-dialog-skip');
+        await page.click('.tab[data-view="browse"]');
+        const btn = `#browse-list .qitem:first-child .note-btn`;
+        assert.equal(await page.$eval(btn, e => e.textContent), '📖 查看說明');
+        await page.click(btn);
+        await page.click('#note-edit-btn');
+        await page.evaluate(() => { $('note-input').value = '改過的解析'; });
+        await page.click('#note-save');
+        await page.waitForFunction(() => !$('note-view').hidden);
+        await page.click('#note-close');
+        // 解析和作答紀錄分開：紀錄檔裡沒有解析；存在瀏覽器的 userNotes，重新整理後還在
+        assert.equal(await page.evaluate(() => JSON.stringify(packRecords()).includes('改過的解析')), false);
+        assert.equal(await page.evaluate(async id => (await idb('readonly', s => s.get('userNotes')))[id].text, qid), '改過的解析');
+        // 匯入解析檔：同一題以較晚改的為準
+        const r = await page.evaluate(async id => {
+            const older = await mergeNotes({ [id]: { text: '舊的', at: '2020-01-01T00:00:00.000Z' } });
+            const other = await mergeNotes({ [Q('ETH-0002')]: { text: '另一題', at: '2020-01-01T00:00:00.000Z' } });
+            return [older, other, getNote(id).text, getNote(Q('ETH-0002')).text];
+        }, qid);
+        assert.deepEqual(r, [0, 1, '改過的解析', '另一題']);
+        // 刪除：按鈕變回提供解析；再匯入舊的內容不會被補回來
+        await page.advance(1000);
+        await page.click(btn);
+        await page.click('#note-delete-btn');
+        await page.waitForFunction(b => document.querySelector(b).textContent === '✏️ 提供解析', {}, btn);
+        assert.equal(await page.evaluate(async id => { await mergeNotes({ [id]: { text: '改過的解析', at: '2020-01-01T00:00:00.000Z' } }); return getNote(id); }, qid), null);
+        await page.closeContext();
+    });
+
     test('其他選項淡化、選錯的加刪除線；錯題重測只出本輪答錯的題目', async () => {
         const page = await openPage();
         await playRound(page);
@@ -441,6 +604,67 @@ describe('本輪檢討', () => {
 });
 
 describe('題目總覽', () => {
+    test('關鍵字查詢：題目／答案／兩者、多個關鍵字、建議名詞、查詢紀錄可以刪除', async () => {
+        const page = await openPage();
+        await page.click('.tab[data-view="browse"]');
+        const count = () => page.evaluate(() => browseList().length);
+        // 依範圍自己算一次，和畫面的結果比較
+        const expected = (terms, scope) => page.evaluate((terms, scope) => allQuestions.filter(q => matches(q) && terms.every(t => {
+            const ans = q.options[q.answer - 1];
+            return scope === 'question' ? q.question.includes(t) : scope === 'answer' ? ans.includes(t) : (q.question + q.options.join('')).includes(t);
+        })).length, terms, scope);
+        await page.focus('#b-q');
+        await page.keyboard.type('公司');
+        const sug = await page.$$eval('#b-suggest .suggest-item', rs => rs.map(r => r.querySelector('.suggest-text').textContent));
+        assert.ok(sug.includes('公司債'), sug.join());
+        assert.ok(sug.indexOf('公司債') < sug.indexOf('上市公司'), '開頭相同的排前面');
+        assert.equal(await count(), await expected(['公司'], 'all'));
+        // 選建議的名詞：換掉正在輸入的詞，並記進查詢紀錄
+        await page.evaluate(() => [...document.querySelectorAll('#b-suggest .suggest-item')].find(r => r.textContent.includes('公司債')).click());
+        assert.equal(await page.$eval('#b-q', e => e.value), '公司債');
+        assert.equal(await count(), await expected(['公司債'], 'all'));
+        assert.ok(await count() > 0);
+        assert.ok(await page.$$eval('#browse-list .qitem mark', ms => ms.length > 0 && ms.every(m => m.textContent === '公司債')));
+        // 查詢範圍
+        for (const scope of ['question', 'answer', 'all']) {
+            await page.select('#b-scope', scope);
+            assert.equal(await count(), await expected(['公司債'], scope), scope);
+        }
+        // 多個關鍵字：全部都要符合；按 Enter 記錄
+        await page.click('#b-q', { clickCount: 3 });
+        await page.keyboard.type('客戶 保密');
+        await page.keyboard.press('Escape');
+        await page.keyboard.press('Enter');
+        assert.equal(await count(), await expected(['客戶', '保密'], 'all'));
+        assert.match(await text(page, '#browse-count'), /符合條件與關鍵字 \d+ 題/);
+        // 統計跟著關鍵字；標題改成篩選題目，不顯示出題用的欄位
+        assert.match(await text(page, '.stats-main'), new RegExp(`符合篩選條件 ${await count()} / 1120 題（排除 暫停複習；關鍵字 客戶 保密）`));
+        assert.equal(await text(page, '#setup-title'), '篩選題目');
+        assert.deepEqual(await page.evaluate(() => ['#f-limit', '#more-settings', '#start-btn'].map(s => !!document.querySelector(s).offsetParent)), [false, false, false]);
+        await page.click('.tab[data-view="quiz"]');
+        assert.equal(await text(page, '#setup-title'), '出題設定');
+        assert.match(await text(page, '.stats-main'), /符合出題規則 1120 \/ 1120 題（排除 暫停複習）/);
+        assert.equal(await page.$eval('#b-q', e => !!e.offsetParent), false);
+        await page.click('.tab[data-view="browse"]');
+        assert.deepEqual(await page.evaluate(() => settings.searchHistory), ['客戶 保密', '公司債']);
+        // 清空後顯示查詢紀錄，可以刪除單筆
+        await page.click('#b-q', { clickCount: 3 });
+        await page.keyboard.press('Backspace');
+        assert.equal(await count(), await expected([], 'all'));
+        assert.deepEqual(await page.$$eval('#b-suggest .suggest-item', rs => rs.map(r => r.querySelector('.suggest-text').textContent)), ['客戶 保密', '公司債']);
+        await page.click('#b-suggest .suggest-item .suggest-del');
+        assert.deepEqual(await page.evaluate(() => settings.searchHistory), ['公司債']);
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'b-q');
+        // 點查詢紀錄：整串換掉
+        await page.click('#b-suggest .suggest-item');
+        assert.equal(await page.$eval('#b-q', e => e.value), '公司債');
+        // 重新整理後查詢紀錄還在
+        await page.reload();
+        assert.deepEqual(await page.evaluate(() => settings.searchHistory), ['公司債']);
+        assert.deepEqual(page.errors, []);
+        await page.closeContext();
+    });
+
     test('每一題剛好有一個進度標籤：未作答或已作答', async () => {
         const page = await openPage({ records: { version: 2, items: {
             'ETH-0001': { history: history('OE', 'OE') }, 'ETH-0002': { history: history('XH') },
@@ -518,6 +742,77 @@ describe('模擬考', () => {
         assert.equal(await page.$$eval('#x-review .qitem', c => c.length), 7);   // 1 錯 + 6 未答
         await page.closeContext();
     });
+
+    test('沿用題目難度計分；記下題目可以從考試紀錄打開；檢討時改難度標籤不影響分數、可標加強複習；倒數時間條', async () => {
+        const page = await openPage({ records: { version: 2, items: {
+            'ETH-0001': { history: history('XH') }, 'ETH-0002': { history: history('XE') },
+        } }, settings: { include: ['answered'], exclude: [], order: 'seq', examPick: 'filter' } });
+        await page.click('.tab[data-view="exam"]');
+        await page.evaluate(() => { document.querySelectorAll('#x-counts input').forEach(i => i.value = 5); $('x-time').value = 20; });
+        await page.click('#x-start');
+        assert.equal(await page.$eval('#x-timebar', e => !e.hidden && e.firstChild.style.width), '100%');
+        await page.advance(10 * 60 * 1000);
+        await page.evaluate(() => tickExam());
+        assert.equal(await page.$eval('#x-timebar', e => [e.firstChild.style.width, e.classList.contains('warn')].join()), '50%,false');
+        // 20 分鐘：剩 25%（5:00）變橘色，剩 10%（2:00）才變紅色
+        await page.advance(5 * 60 * 1000 + 1000);
+        await page.evaluate(() => tickExam());
+        assert.equal(await page.$eval('#x-timebar', e => [e.classList.contains('low'), e.classList.contains('warn')].join()), 'true,false');
+        await page.advance(3 * 60 * 1000);
+        await page.evaluate(() => tickExam());
+        assert.equal(await page.$eval('#x-timebar', e => [e.classList.contains('low'), e.classList.contains('warn')].join()), 'true,true');
+        assert.match(await text(page, '#x-timer'), /剩餘 1:59\s*已用 18:01/);
+        await page.evaluate(() => { exam.items.forEach(it => { it.pick = it.q.answer; }); });
+        await page.click('#x-submit');
+        const after = () => page.evaluate(ids => ids.map(id => { const r = peek(Q(id)); return [r.level, r.score, r.review]; }), ['ETH-0001', 'ETH-0002']);
+        assert.deepEqual(await after(), [['HARD', 0, false], ['EASY', 4, false]]);   // −1 + 1（HARD）、−1 + 5（EASY）
+        // 檢討：ETH-0001 改成 EASY（只改標籤）、標加強複習
+        const tools = '#x-review .qitem:nth-child(1) .x-tools';
+        await page.click(`${tools} .chip:nth-of-type(1)`);
+        await page.click(`${tools} .chip:nth-of-type(4)`);
+        assert.deepEqual(await after(), [['EASY', 0, true], ['EASY', 4, false]]);
+        assert.match(await page.$eval(tools, e => e.querySelector('.chip.on').textContent), /EASY/);
+        // 存檔再讀回來，標籤還在
+        const back = await page.evaluate(() => { const r = normalizeRecords(JSON.parse(JSON.stringify(packRecords()))).items[Q('ETH-0001')]; return [r.level, r.score]; });
+        assert.deepEqual(back, ['EASY', 0]);
+        // 之後再練習作答，以新的作答為準
+        await page.advance(60 * 1000);
+        assert.equal(await page.evaluate(() => { const r = rec(Q('ETH-0001')); r.history.push({ t: new Date().toISOString(), pick: 9, ok: false, level: 'MEDIUM' }); recompute(r); return r.level; }), 'MEDIUM');
+        // 考試紀錄：記下題目與作答，可以打開
+        assert.deepEqual(await page.evaluate(() => records.exams[0].items.map(([id, pick]) => [id.slice(-4), pick !== null])), [['0001', true], ['0002', true]]);
+        await page.click('#x-back');
+        await page.click('#x-history .x-history-row.open');
+        assert.match(await text(page, '#x-summary'), /考試紀錄/);
+        assert.equal(await page.$$eval('#x-review .qitem', c => c.length), 2);
+        await page.closeContext();
+    });
+
+    test('依抽題範圍：只抽符合條件的題目、照順序先抽；完全隨機不受條件影響，也不顯示上方區塊', async () => {
+        const page = await openPage({ records: { version: 2, items: {
+            'ETH-0001': { history: history('XM') }, 'ETH-0002': { history: history('XH') }, 'ETH-0003': { history: history('OM') },
+        } }, settings: { include: ['lastWrong'], exclude: [], order: 'seq' } });
+        await page.click('.tab[data-view="exam"]');
+        const visible = () => page.$eval('#setup', e => !e.hidden && getComputedStyle(e).display !== 'none');
+        assert.equal(await visible(), false);
+        await page.select('#x-pick', 'filter');
+        assert.equal(await visible(), true);
+        assert.equal(await text(page, '#setup-title'), '抽題範圍');
+        assert.match(await text(page, '#x-counts'), /符合 2 ／ 共 616 題/);
+        assert.equal(await page.$eval('#f-limit', e => e.offsetParent), null);   // 題數、開始按鈕不顯示
+        assert.equal(await page.$eval('#start-btn', e => e.offsetParent), null);
+        await page.evaluate(() => { document.querySelectorAll('#x-counts input').forEach(i => i.value = 5); });
+        await page.click('#x-start');
+        assert.equal(await visible(), false);   // 考試中不顯示
+        assert.deepEqual(await page.evaluate(() => exam.items.map(it => it.q.id.slice(-4))), ['0001', '0002']);
+        await page.click('#x-submit');
+        await page.click('#x-back');
+        assert.equal(await visible(), true);
+        await page.select('#x-pick', 'random');
+        assert.equal(await visible(), false);
+        await page.click('#x-start');
+        assert.equal(await page.evaluate(() => exam.items.length), 10);
+        await page.closeContext();
+    });
 });
 
 /* ---------- 合併兩台電腦的紀錄 ---------- */
@@ -542,7 +837,7 @@ describe('合併紀錄', () => {
         assert.equal(r.h1, 2);
         assert.equal(r.h3, 1);
         assert.equal(r.exams, 2);
-        assert.equal(r.score1, 3.75);       // 連對 2 次：1.5 + 2.25
+        assert.equal(r.score1, 6.25);       // 連對 2 次：2.5 + 3.75
         await page.closeContext();
     });
 
@@ -580,7 +875,7 @@ describe('儲存', () => {
         const bankId = await page.evaluate(() => splitQid(Q('ETH-0001')).bankId);
         assert.deepEqual(Object.keys(saved.banks), [bankId]);          // 沒資料的題目不存
         const t = saved.banks[bankId];
-        assert.deepEqual(t.columns, ['seq', 'h', 'review', 'noReview', 'markAt', 'base']);   // 不存分數等算得出來的欄位
+        assert.deepEqual(t.columns, ['seq', 'h', 'review', 'noReview', 'markAt', 'base', 'tag']);   // 不存分數等算得出來的欄位
         assert.equal(t.rows.length, 1);
         assert.equal(t.rows[0][0], 1);
         assert.deepEqual(t.rows[0][1][0].slice(1, 5), [4, 1, 'H', 0]);   // 第 5 欄 0：不是模擬考
@@ -611,7 +906,7 @@ describe('儲存', () => {
             };
         });
         assert.equal(r.newline, false);
-        assert.deepEqual(r.scores, [4.0, -1]);   // EASY 2.5 + HARD 1.0 × 1.5
+        assert.deepEqual(r.scores, [6.5, -1]);   // EASY 5 + HARD 1.0 × 1.5
         assert.equal(r.src, 'exam');
         assert.equal(r.review, true);
         assert.deepEqual(r.merged, { added: 0, total: 3 });

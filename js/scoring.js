@@ -43,6 +43,8 @@ function recompute(r) {
     r.wrong = (r.base?.wrong || 0) + r.history.filter(h => !h.ok).length;
     const last = r.history[r.history.length - 1];
     r.level = last ? (last.level || 'MEDIUM') : null;   // 未作答的題目沒有難度
+    // 交卷檢討時另外改的難度標籤：只改顯示與篩選用的難度，不影響分數；之後再作答就以新的作答為準
+    if (last && r.tag && Date.parse(r.tag.at) >= Date.parse(last.t)) r.level = r.tag.level;
     r.last = last ? (last.ok ? 'correct' : 'wrong') : null;
     r.lastAt = last ? last.t : null;
 }

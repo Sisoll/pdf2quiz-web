@@ -26,7 +26,7 @@
     </header>
 
     <div class="card" id="setup">
-        <h1 class="card-title">出題設定</h1>
+        <h1 class="card-title" id="setup-title">出題設定</h1>
         <div class="controls">
             <label>題庫
                 <select id="f-source"></select>
@@ -42,11 +42,8 @@
                     <button class="btn light small" id="f-range-clear" title="清除分數區間">清除</button>
                 </div>
             </div>
-            <label>題數
-                <input type="number" id="f-limit" min="1" placeholder="不限" title="空白：一直出題直到按中止">
-            </label>
         </div>
-        <details class="more-settings" id="more-settings">
+        <details class="more-settings no-browse" id="more-settings">
             <summary>更多設定 <span class="more-summary" id="more-summary"></span></summary>
             <div class="controls">
             <label>順序
@@ -55,14 +52,14 @@
                     <option value="scoreAsc">分數低到高</option>
                     <option value="scoreDesc">分數高到低</option>
                     <optgroup label="隨機">
-                        <option value="random" title="作答次數少、錯得多、最近標 HARD 的題目比較容易先出現">弱點加權</option>
+                        <option value="random" title="作答次數少、錯得多、最近標 HARD 的題目比較容易先出現；1 小時內答過的排到最後">弱點加權</option>
                         <option value="randomNew" title="弱點加權，再加強「作答次數少」的比重">未作答加強</option>
                         <option value="randomWrong" title="弱點加權，再加強「錯題」的比重">錯題加強</option>
                         <option value="randomHard" title="弱點加權，再加強「難度」的比重">難度加強</option>
                     </optgroup>
                 </select>
             </label>
-            <label>跳到題號
+            <label class="quiz-only">跳到題號
                 <input type="number" id="f-jump" min="1" placeholder="題號">
             </label>
             </div>
@@ -75,7 +72,29 @@
                 括號內是目前科目與分數區間內的題數。
             </div>
         </div>
+        <div class="keyword-box browse-only">
+            <div class="field">關鍵字
+                <div class="search-row" id="search-row">
+                    <select id="b-scope" title="查詢範圍">
+                        <option value="all">題目＋選項</option>
+                        <option value="question">只查題目</option>
+                        <option value="answer">只查答案</option>
+                    </select>
+                    <div class="search-box">
+                        <input type="search" id="b-q" placeholder="🔍 輸入關鍵字" autocomplete="off" spellcheck="false">
+                        <div id="b-suggest" class="suggest" hidden></div>
+                    </div>
+                </div>
+            </div>
+            <div class="cond-hint">
+                空格分開的多個關鍵字要全部符合。<br>
+                「只查答案」只看正確的選項。
+            </div>
+        </div>
         <div class="start-row" id="start-row">
+            <label class="limit-field">題數
+                <input type="number" id="f-limit" min="1" placeholder="不限" title="空白：一直出題直到按中止">
+            </label>
             <button class="btn" id="start-btn">開始</button>
             <span id="start-info" class="start-info"></span>
         </div>
@@ -83,7 +102,8 @@
         <details class="rules">
             <summary>分數怎麼算？</summary>
             <ul>
-                <li>答對：分數加上「難度係數 × 連續加成」。難度係數 EASY 2.5、MEDIUM 1.5、HARD 1.0；連續加成第 1 次 ×1.0、第 2 次 ×1.5、第 3 次起 ×2.0。</li>
+                <li>答對：分數加上「難度係數 × 連續加成」。難度係數 EASY 5、MEDIUM 2.5、HARD 1.0；連續加成第 1 次 ×1.0、第 2 次 ×1.5、第 3 次起 ×2.0。<br>
+                    所以 EASY 答對一次、MEDIUM 答對兩次就會到 5（已記住）；HARD 要連續答對 4 次。</li>
                 <li>答錯：分數砍半再減 1，連續次數歸零。</li>
                 <li>分數範圍是 −2 到 8：上限 8，一直答錯會逐漸接近 −2 但不會更低。分數 ≥ 5，而且沒有標記「加強複習」，就是「已記住」。</li>
                 <li>每次作答各自記錄當次選的難度，之後改選不會影響以前的分數。</li>
@@ -92,6 +112,8 @@
                 <li>隨機「弱點加權」：作答次數少、錯得多、最近標 HARD 的題目比較容易先出現。權重 = 作答次數 × 錯題 × 難度，三項比重 1 : 1 : 1。
                     作答次數 = 1 + 2 ÷ (作答次數 + 1)；錯題 = 1 + (8 − 分數) ÷ 6 + 答錯次數 × 0.2（最多算 5 次）；難度 = EASY 0.7、MEDIUM 1、HARD 1.5（沒作答過算 1）。</li>
                 <li>隨機「未作答加強 / 錯題加強 / 難度加強」：把其中一項的比重提高為 1.5（1.5 : 1 : 1），其他不變。</li>
+                <li>隨機的四種順序：最近 1 小時內答過的題目排到最後（剛做過答對也不代表記住），其中越早答的越前面。<br>
+                    所以練完一輪馬上再開下一輪，會先出還沒練到的題目。</li>
             </ul>
         </details>
     </div>
@@ -109,7 +131,10 @@
             <span id="score" class="score"></span>
             <span id="progress" class="progress"></span>
         </div>
-        <div id="question" class="question">正在載入題庫，請稍候...</div>
+        <div class="question-row">
+            <div id="question" class="question">正在載入題庫，請稍候...</div>
+            <span id="copy-slot" class="copy-slot"><span id="note-slot"></span></span>
+        </div>
         <div id="options"></div>
         <div id="round-review" class="round-review" hidden>
             <div class="round-review-head">
@@ -132,13 +157,21 @@
             快捷鍵：<br>
             Enter 開始 ・ 1–4 作答 ・ ← 上一題 ・ Esc 中止<br>
             答完後按 E / M / H 選難度並進下一題，或按 Enter / → 以 MEDIUM 進下一題<br>
-            R 加強複習、S 暫停複習（按 × 或再按一次移除，作答前也可以）・ Z 復原這次作答
+            R 加強複習、S 暫停複習（答完後按 × 或再按一次移除）・ Z 復原這次作答
         </div>
     </div>
 
     <div class="card" id="exam" hidden>
         <div id="exam-setup">
             <h1 class="card-title">模擬考</h1>
+            <div class="controls">
+                <label>抽題方式
+                    <select id="x-pick">
+                        <option value="random">完全隨機（全部題目）</option>
+                        <option value="filter">依抽題範圍（上方的條件與順序）</option>
+                    </select>
+                </label>
+            </div>
             <div class="controls">
                 <div class="controls" id="x-counts"></div>
                 <label>時間（分鐘，0 為不限）
@@ -150,7 +183,9 @@
             </div>
             <label class="check"><input type="checkbox" id="x-record" checked> 成績計入作答紀錄（有作答的題目各記一次，分數會跟著變）</label>
             <div class="hint">
-                各科從題庫完全隨機抽題（不加權），每科滿分 100 分。<br>
+                完全隨機：各科從整個題庫隨機抽題（不加權），像正式考試。<br>
+                依抽題範圍：只抽符合上方條件的題目，「順序」決定先抽哪些（弱點加權時，1 小時內答過的最後才抽）。<br>
+                每科滿分 100 分。<br>
                 作答中不顯示答案，可以隨時改答案，交卷後才看結果。
             </div>
             <div class="start-row"><button class="btn" id="x-start">開始考試</button></div>
@@ -162,6 +197,7 @@
                 <b id="x-timer" class="x-timer"></b>
                 <span id="x-progress"></span>
                 <button class="btn danger" id="x-submit">交卷</button>
+                <div class="x-timebar" id="x-timebar" title="剩餘時間"><span></span></div>
             </div>
             <div id="x-grid" class="x-grid"></div>
             <div class="meta"><span id="x-cat" class="badge"></span><span id="x-num" class="progress"></span></div>
@@ -201,7 +237,7 @@
             <button class="btn" id="b-toggle">顯示答案</button>
         </div>
         <div class="hint">
-            清單使用上方的科目、分數區間與條件。<br>
+            清單使用上方的篩選條件與關鍵字。<br>
             答案隱藏時，點一下題目可以只看那一題的答案。
         </div>
         <div class="pager" id="b-pager-top"></div>
@@ -225,12 +261,27 @@
                 請用 Chrome 或 Edge 開啟本頁。
             </div>
         </div>
+        <div class="file-box">
+            <div><b>解析檔：</b><span id="notes-file-status">尚未連結（目前只存在瀏覽器裡）</span></div>
+            <div class="footer-actions" id="notes-file-actions">
+                <button class="btn" id="notes-file-open">開啟既有解析檔</button>
+                <button class="btn light" id="notes-file-new">建立新解析檔</button>
+                <button class="btn" id="notes-file-resume" hidden>繼續使用上次的解析檔</button>
+                <button class="btn light" id="notes-file-unlink" hidden>取消連結</button>
+            </div>
+            <div class="hint">
+                連結後，每次新增、修改、刪除解析都會自動寫回這個檔案。<br>
+                選專案裡的 data/notes.js，提交後就是內建解析。<br>
+                開啟時會和瀏覽器裡的解析合併，同一題以較晚改的為準。
+            </div>
+        </div>
         <div class="action-groups">
             <div class="action-group">
                 <div class="action-group-title">📤 匯出</div>
                 <div class="footer-actions">
                     <button class="btn light" id="export-json">JSON（備份用）</button>
                     <button class="btn light" id="export-csv">CSV（Excel 分析）</button>
+                    <button class="btn light" id="export-notes" title="匯出所有解析（內建＋自己寫的），可以用 tools/build-notes.js 變成內建解析">解析</button>
                 </div>
             </div>
             <div class="action-group">
@@ -238,6 +289,7 @@
                 <div class="footer-actions">
                     <button class="btn light" id="import-merge" title="把檔案裡的作答加進目前的紀錄，重複的不會多算">合併匯入</button>
                     <button class="btn light" id="import-replace" title="用檔案的紀錄取代目前的紀錄">取代匯入</button>
+                    <button class="btn light" id="import-notes" title="匯入解析檔；同一題以較晚改的為準">匯入解析</button>
                 </div>
             </div>
             <div class="action-group danger-zone">
@@ -247,6 +299,7 @@
                 </div>
             </div>
             <input type="file" id="import-file" accept=".json,application/json">
+            <input type="file" id="import-notes-file" accept=".json,application/json" hidden>
         </div>
         <div class="hint">
             沒有連結紀錄檔時，紀錄只存在這台電腦的瀏覽器裡。<br>
@@ -266,11 +319,36 @@
     </div>
 </dialog>
 
+<dialog id="note-dialog" class="dialog note-dialog">
+    <div class="dialog-title" id="note-title">解析</div>
+    <div class="note-question" id="note-question"></div>
+    <div id="note-view">
+        <div class="note-text" id="note-text"></div>
+        <div class="note-time" id="note-time"></div>
+    </div>
+    <div id="note-edit" hidden>
+        <textarea id="note-input" rows="8" placeholder="把解析貼在這裡"></textarea>
+    </div>
+    <div class="dialog-actions" id="note-actions-view">
+        <button class="btn light danger-light" id="note-delete-btn">刪除</button>
+        <button class="btn light" id="note-copy-btn">📋 複製</button>
+        <button class="btn light" id="note-edit-btn">編輯</button>
+        <button class="btn" id="note-close">關閉</button>
+    </div>
+    <div class="dialog-actions" id="note-actions-edit" hidden>
+        <button class="btn light" id="note-cancel">取消</button>
+        <button class="btn" id="note-save">儲存</button>
+    </div>
+</dialog>
+
 <script src="banks/index.js"></script>
+<script src="data/keywords.js"></script>
+<script src="data/notes.js"></script>
 <script src="js/config.js"></script>
 <script src="js/banks.js"></script>
 <script src="js/scoring.js"></script>
 <script src="js/store.js"></script>
+<script src="js/notes.js"></script>
 <script src="js/filters.js"></script>
 <script src="js/quiz.js"></script>
 <script src="js/browse.js"></script>

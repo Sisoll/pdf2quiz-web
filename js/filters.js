@@ -12,6 +12,7 @@ function test(r, key) {
         case 'answered': return r.correct + r.wrong > 0;
         case 'mastered': return isMastered(r);
         case 'everWrong': return r.wrong > 0;
+        case 'lastWrong': return r.last === 'wrong';   // 最近一次作答答錯
         case 'review': return !!r.review;
         case 'noReview': return !!r.noReview;
         case 'EASY': case 'MEDIUM': case 'HARD': return r.level === key;   // 未作答的題目 level 為 null，不符合任何難度
@@ -23,7 +24,7 @@ function inScope(q) {
     if (settings.category !== 'all' && q.categoryKey !== settings.category) return false;
     return inScoreRange(peek(q.id));
 }
-/* 出題規則：符合任一個「包含」（沒勾就是全部），且不符合任何「排除」 */
+/* 篩選規則：符合任一個「包含」（沒勾就是全部），且不符合任何「排除」 */
 function matches(q) {
     if (!inScope(q)) return false;
     const r = peek(q.id);
@@ -31,17 +32,28 @@ function matches(q) {
     return !settings.exclude.some(key => test(r, key));
 }
 function buildQueue() {
-    queue = allQuestions.filter(q => matches(q));
+    queue = orderQuestions(allQuestions.filter(q => matches(q)));
+    pos = 0;
+}
+/* 依「順序」設定排列題目；練習與模擬考（依抽題範圍）共用 */
+function orderQuestions(list) {
+    let queue = list.slice();
     // 分數排序：同分維持題號順序（Array.sort 是穩定排序）
     if (settings.order === 'scoreAsc') queue.sort((a, b) => peek(a.id).score - peek(b.id).score);
     if (settings.order === 'scoreDesc') queue.sort((a, b) => peek(b.id).score - peek(a.id).score);
     if (settings.order in RANDOM_WEIGHT.modes) {
-        // 加權隨機排列：每題抽 random^(1/權重)，由大到小排，權重越高越容易排前面
+        // 加權隨機排列：每題抽 random^(1/權重)，由大到小排，權重越高越容易排前面；
+        // 最近答過的給負值排到最後，越早答的越前面
         const boosted = RANDOM_WEIGHT.modes[settings.order];
-        queue = queue.map(q => [Math.pow(Math.random(), 1 / randomWeight(peek(q.id), boosted)), q])
+        const now = Date.now();
+        const key = r => {
+            const ago = r.lastAt ? now - Date.parse(r.lastAt) : Infinity;
+            return ago < RANDOM_WEIGHT.recentMs ? ago / RANDOM_WEIGHT.recentMs - 1 : Math.pow(Math.random(), 1 / randomWeight(r, boosted));
+        };
+        queue = queue.map(q => [key(peek(q.id)), q])
             .sort((a, b) => b[0] - a[0]).map(x => x[1]);
     }
-    pos = 0;
+    return queue;
 }
 /* 三個因素，見 config.js 的 RANDOM_WEIGHT */
 function randomFactors(r) {
@@ -101,11 +113,14 @@ function renderChips() {
     });
 }
 
-/* 統計：只算符合出題規則的題目，題數旁邊附上目前科目的總題數 */
+/* 題目總覽另外加上關鍵字 */
+const shownInView = q => matches(q) && (view !== 'browse' || matchesQuery(q, queryTerms(browseQuery)));
+/* 統計：只算符合篩選規則的題目（題目總覽再加上關鍵字），題數旁邊附上目前科目的總題數 */
 function renderStats() {
     renderChips();
+    if (view === 'exam') renderExamCounts(true);
     const total = allQuestions.filter(q => settings.category === 'all' || q.categoryKey === settings.category).length;
-    const list = allQuestions.filter(matches);
+    const list = allQuestions.filter(shownInView);
     const n = { lastOk: 0, done: 0, mastered: 0, review: 0, noReview: 0, EASY: 0, MEDIUM: 0, HARD: 0, correct: 0, wrong: 0 };
     for (const q of list) {
         const r = peek(q.id);
@@ -127,7 +142,7 @@ function renderStats() {
         `<div class="stat-bar"><span style="width:${(Math.min(1, ratio || 0) * 100).toFixed(1)}%"></span></div></div></div>`;
     const of = v => list.length ? v / list.length : 0;
     $('stats').innerHTML =
-        `<div class="stats-head"><span class="stats-main">${ICONS.matched} 符合出題規則 <b>${list.length}</b> <small>/ ${total} 題（${ruleText()}）</small></span>` +
+        `<div class="stats-head"><span class="stats-main">${ICONS.matched} ${{ browse: '符合篩選條件', exam: '符合抽題範圍' }[view] || '符合出題規則'} <b>${list.length}</b> <small>/ ${total} 題（${ruleText()}）</small></span>` +
         (list.length ? '' : `<span class="stats-note">沒有符合條件的題目</span>`) + `</div>` +
         `<div class="stats-grid">` +
         stat(ICONS.answered, '已作答', n.done, of(n.done)) +
@@ -145,13 +160,14 @@ function renderStats() {
         ['EASY', 'MEDIUM', 'HARD'].map(k => `<span>${ICONS[k]} ${k} <b>${n[k]}</b></span>`).join('') +
         `<span>${ICONS.none} 未分級（未作答）<b>${none}</b></span></div>`;
 }
-/* 目前的出題規則，例如「包含 已作答；排除 暫停複習；分數 1～8」 */
+/* 目前的篩選規則，例如「包含 已作答；排除 暫停複習；分數 1～8；關鍵字 公司債」 */
 function ruleText() {
     const label = key => CONDITIONS.find(c => c.key === key).label;
     const parts = [];
     if (settings.include.length) parts.push(`包含 ${settings.include.map(label).join('、')}`);
     if (settings.exclude.length) parts.push(`排除 ${settings.exclude.map(label).join('、')}`);
     if (settings.min !== '' || settings.max !== '') parts.push(`分數 ${settings.min === '' ? '−2' : settings.min}～${settings.max === '' ? SCORING.cap : settings.max}`);
+    if (view === 'browse' && browseQuery.trim()) parts.push(`關鍵字 ${browseQuery.trim().replace(/\s+/g, ' ')}${{ question: '（只查題目）', answer: '（只查答案）' }[settings.browseScope] || ''}`);
     return parts.join('；') || '全部題目';
 }
 

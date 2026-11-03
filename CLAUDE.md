@@ -14,13 +14,14 @@ npm test                                           # 全部端對端測試
 node --test --test-name-pattern="合併" tests/app.test.js   # 只跑名稱符合的測試
 node tools/convert-questions.js                    # 由 questions.json 重新產生 banks/（沿用 banks/index.js 裡的題庫 id）
 node tools/verify-banks.js                         # 逐題比對 banks/ 和 questions.json
+node tools/build-notes.js <解析檔.json>             # 把頁面匯出的解析併進 data/notes.js
 ```
 
 測試會用真的 Chrome / Edge（headless）開 `index.html`；找不到瀏覽器時用 `CHROME_PATH` 指定。沒有 lint。
 
 ## 架構
 
-- **沒有模組系統**：`index.html` 依序載入 `banks/index.js` → `config` → `banks` → `scoring` → `store` → `filters` → `quiz` → `browse` → `exam` → `main`，全部是共用全域作用域的一般 script。新函式可以直接呼叫其他檔案的函式，但要注意載入順序；全域狀態（`records`、`settings`、`session`、`queue` 等）宣告在最後載入的 `main.js`。
+- **沒有模組系統**：`index.html` 依序載入 `banks/index.js` → `data/keywords.js` → `data/notes.js` → `config` → `banks` → `scoring` → `store` → `notes` → `filters` → `quiz` → `browse` → `exam` → `main`，全部是共用全域作用域的一般 script。新函式可以直接呼叫其他檔案的函式，但要注意載入順序；全域狀態（`records`、`settings`、`session`、`queue` 等）宣告在最後載入的 `main.js`。
 - **題庫**（`js/banks.js`）：`banks/index.js`（`window.QUIZ_CATALOG`）列出內建題庫與組合，`init()` 再用 script 標籤載入各題庫檔（`window.QUIZ_BANKS[id]`；雙擊開啟時不能用 fetch）。這些檔案由 `tools/convert-questions.js` 產生，不要手動修改；**`banks/index.js` 不能刪**，題庫 id 靠它固定。
   - 題庫 id：`{類別 key}-{西元年}-{4 碼隨機}`，例如 `ETH-2024-NX89`。題目 id：`{題庫 id}-{4 位數流水號 seq}`，例如 `ETH-2024-NX89-0001`；`num` 是 PDF 上的題號，只用來顯示。作答紀錄以題目 id 對應題目，題目 id 一旦產生就不能改。
   - 題目物件另有 `bankId`、`category`（科目名稱）、`categoryKey`（類別 key）。科目篩選存的是類別 key；一個 key 只對應一個名稱。
@@ -28,17 +29,18 @@ node tools/verify-banks.js                         # 逐題比對 banks/ 和 que
   - 舊版題目 id（`ETH-0001`）由 `convertLegacyId()` 轉換，讀入任何紀錄時自動處理。
 - **檔案格式**：題庫檔與作答紀錄都用欄位式 `{ columns, rows }`（`tableRows()` / `toTable()`），讀取時依欄位名稱對應。最上層有 `format` 與 `version`。
 - **作答紀錄的兩種格式**（`js/store.js`）：
-  - 程式內部：每題是物件 `{ history: [{ t, pick, ok, level, src?, sec? }], review, noReview, markAt, base?, ...算出來的欄位 }`。`score`、`correct`、`wrong`、`streak`、`level`、`last`、`lastAt` 都由 `recompute()`（`js/scoring.js`）依歷程重算，改過 `history` 就要呼叫它。
+  - 程式內部：每題是物件 `{ history: [{ t, pick, ok, level, src?, sec? }], review, noReview, markAt, base?, tag?, ...算出來的欄位 }`。`tag`（`{ level, at }`）是模擬考檢討時改的難度標籤：比最近一次作答晚才生效，只改 `level`、不影響分數。模擬考成績 `exams[]` 的 `items` 是 `[題目 id, 選的答案]`（舊紀錄沒有）。`score`、`correct`、`wrong`、`streak`、`level`、`last`、`lastAt` 都由 `recompute()`（`js/scoring.js`）依歷程重算，改過 `history` 就要呼叫它。
   - 存檔（版本 4，`format: "pdf2quiz-records"`）：`packRecords()` 依題庫分組成表格（每題一列、只寫流水號），每筆作答壓成 `[時間（秒數的 36 進位）, 選項, 1/0, 'E'|'M'|'H', 'x'|0?, 作答秒數?]`（作答秒數是練習時才記，舊紀錄沒有；沒有秒數時計分當成平均，所以舊分數不變），不存算得出來的欄位；對不到題庫的 id 放在 `other` 原樣保留。讀檔一律走 `migrateRecords()` / `normalizeRecords()`，它們也負責轉換版本 1～3 與舊 id。第一次轉換前的原始紀錄會另存在 IndexedDB 的 `records-backup-before-v4`。
 - **儲存位置**：瀏覽器端存 IndexedDB（資料庫 `pdf2quiz`、store `kv`，key `records`；連結的紀錄檔 handle 也存在同一個 store）。localStorage 的 `pdf2quiz-records-v1` 只是舊版的位置，載入時搬移後刪除；設定仍存 localStorage 的 `pdf2quiz-settings-v1`。`saveRecords()` 會寫 IndexedDB，並在有連結紀錄檔時（File System Access API，只有 Chrome / Edge）延遲 300 ms 寫檔。
 - **合併**：`mergeRecordSets()` 用「秒數 + 選項 + 對錯」辨識同一筆作答，所以重複匯入不會增加筆數。開啟紀錄檔、合併匯入都走這裡。
 - **難度**：未作答的題目 `level` 是 `null`（未分級），答完預設 MEDIUM，題目的難度 = 最近一次作答的難度。不要讓未作答的題目落入任何難度的條件或統計。
 - **計分與出題參數**都在 `js/config.js`（`SCORING`、`RANDOM_WEIGHT`、`CONDITIONS`、`HISTORY_LIMIT`）。README 的「計分規則」一節要和這裡一致。
 - **題庫管理頁**（`manage.html` + `js/manage.js`，載入 `banks`、`scoring`、`store`，不載入測驗頁的 `filters`／`quiz`／`browse`／`exam`／`main`，所以兩頁共用的常數與工具要放在 `config.js`）：使用者匯入的題庫存在 IndexedDB 的 `userBanks`（題庫 id → 題庫檔內容），自建組合在 `userCombos`，備份提醒的狀態在 `manageMeta`。`importData()` 依內容判斷題庫檔、完整備份（`format: "pdf2quiz-backup"`）、作答紀錄檔或舊版 `questions.json`。和內建題庫 id 相同的一律另存成新 id；一個類別 key 只對應一個名稱。
-- **從 PDF 建立題庫**（`js/pdftext.js`、`js/templates.js`、`templates/index.js`、`js/manage-pdf.js`）：`extractPdfLines()` 用 `vendor/pdfjs/` 的 pdf.js 3.x UMD 版取出文字行（依需要才用 script 載入；新版 pdf.js 只有 ES module，雙擊開啟時不能用），每行經過 `normalizeLine()`（去掉中文字之間的空白）；Python 工具 `tools/extract_text.py` 的輸出也走同一個正規化。樣板是可讀的設定（`start` 正規表達式含 `num`／`rest`／`ans` 群組、`sequential`、`options.marker`、`answer.position`、`ignore`），`rankTemplates()` 全部試一次依解析題數排序。現有兩份 PDF 用第一個內建樣板解析，和內建題庫只差空白與 ETH 第 279 題的人工修正。
+- **從 PDF 建立題庫**（`js/pdftext.js`、`js/templates.js`、`templates/index.js`、`js/manage-pdf.js`）：`extractPdfLines()` 用 `vendor/pdfjs/` 的 pdf.js 3.x UMD 版取出文字行（依需要才用 script 載入；新版 pdf.js 只有 ES module，雙擊開啟時不能用），每行經過 `normalizeLine()`（去掉中文字之間的空白）；Python 工具 `tools/extract_text.py` 的輸出也走同一個正規化。樣板是可讀的設定（`start` 正規表達式含 `num`／`rest`／`ans` 群組、`sequential`、`options.marker`、`answer.position`、`ignore`），`rankTemplates()` 全部試一次依解析題數排序。現有兩份 PDF 用第一個內建樣板解析，和內建題庫只差空白與人工修正（`tools/convert-questions.js` 的 `corrections`：ETH 第 279 題的答案，以及幾題中文字之間多出的空白）。
 - **建立樣板**（`js/manage-template.js`，推規則的純函式 `inferTemplate()`／`verifyTemplate()`／`validateTemplate()` 在 `js/templates.js`）：標記是 `{ kind: 'num'|'option'|'answer'|'ignore', line, start, end }`（行與字元位置），每題以題號標記開頭。推出的樣板一定要套回範例、結果和標記一致才能儲存。注意 `normalizeLine()` 已經去掉中文字之間的空白，推規則時不能假設題號後面有空白。自建樣板存在 IndexedDB 的 `userTemplates`（陣列），id 是 `user-` 加 4 碼；樣板檔是 `format: "pdf2quiz-template"`；完整備份的 `templates` 欄位。
 - **修正題目**：使用者題庫直接改題庫檔並記進 `corrections`；內建題庫的修正存在 IndexedDB 的 `builtinCorrections`，`loadBanks()` 載入時用 `applyCorrections()` 套上（內建題庫已等於修正後的值就略過；值對不上時記進 `correctionConflicts` 提示）。修正答案不重新判定過去的作答。
-- **多個分頁同時開著**：寫進 IndexedDB 之後呼叫 `notifyChanged('records' | 'banks' | 'templates')`，其他分頁透過 localStorage 的 `storage` 事件（`onDataChanged()`）收到通知：作答紀錄直接重新讀取；題庫變了，閒置的測驗頁會重新整理，進行中的練習或考試只提示；樣板變了測驗頁不理會。
+- **解析**（`js/notes.js`）：和作答紀錄分開。內建解析在 `data/notes.js`（`window.QUIZ_NOTES`，由 `tools/build-notes.js` 從頁面匯出的 `format: "pdf2quiz-notes"` 檔產生）；使用者寫的存在 IndexedDB 的 `userNotes`（`{ 題目 id: { text, at } }`，刪除留空字串），同一題以較晚改的為準。完整備份的 `notes` 欄位。也能像作答紀錄檔一樣連結解析檔（IndexedDB key `notesFile`），每次修改延遲 300 ms 寫回；連結 `.js` 檔時寫成 `window.QUIZ_NOTES = ...`，通常直接連結專案的 `data/notes.js`，寫回的內容保留刪除紀錄（空字串）。紀錄檔若有開發中版本留下的 `note` 欄位，`migrateRecords()` 會搬到解析，所以要先 `loadNotes()` 再讀紀錄。題庫管理頁也載入 `notes.js`。
+- **多個分頁同時開著**：寫進 IndexedDB 之後呼叫 `notifyChanged('records' | 'banks' | 'templates' | 'notes')`，其他分頁透過 localStorage 的 `storage` 事件（`onDataChanged()`）收到通知：作答紀錄直接重新讀取；題庫變了，閒置的測驗頁會重新整理，進行中的練習或考試只提示；樣板變了測驗頁不理會。
 - **一輪練習的狀態**（`session`）和進行中的模擬考只存在記憶體，沒有寫進紀錄；模擬考交卷時才寫入。
 
 ## 測試

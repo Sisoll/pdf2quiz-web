@@ -133,7 +133,7 @@ describe('修正題目', () => {
         assert.notEqual(r.answer, r.file);        // 內建題庫檔本身沒變，載入時套上修正
         // 匯出的內建題庫帶著修正
         const exported = await page.evaluate(id => { const d = bankData(id); return [d.questions.rows[0][4], d.corrections.rows.length]; }, ethId);
-        assert.deepEqual(exported, [r.answer, 2]);
+        assert.deepEqual(exported, [r.answer, (await page.evaluate(id => window.QUIZ_BANKS[id].corrections.rows.length, ethId)) + 1]);
         // 備份還原到新的瀏覽器
         const backup = await page.evaluate(() => buildBackup());
         await page.closeContext();

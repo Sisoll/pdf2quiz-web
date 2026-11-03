@@ -20,11 +20,19 @@ function setView(v) {
     $('quiz').hidden = v !== 'quiz';
     $('browse').hidden = v !== 'browse';
     $('exam').hidden = v !== 'exam';
-    $('setup').hidden = v === 'exam';   // 模擬考有自己的設定
     document.body.classList.toggle('view-browse', v === 'browse');
-    if (v === 'browse') renderBrowse(true);
-    else if (v === 'exam') { if (!exam && $('exam-result').hidden) renderExamHistory(); }
+    document.body.classList.toggle('view-exam', v === 'exam');
+    // 題目總覽不出題：同一個區塊當成篩選題目用；模擬考依抽題範圍時當成抽題範圍；只顯示用得到的欄位
+    $('setup-title').textContent = { browse: '篩選題目', exam: '抽題範圍' }[v] || '出題設定';
+    syncSetup();
+    if (v === 'browse') { renderStats(); renderBrowse(true); }
+    else if (v === 'exam') { if (!exam && $('exam-result').hidden) renderExamHistory(); renderStats(); }
     else renderStats();
+}
+
+/* 模擬考有自己的設定：只有在設定畫面、而且選「依抽題範圍」時才顯示上方區塊 */
+function syncSetup() {
+    $('setup').hidden = view === 'exam' && (settings.examPick !== 'filter' || $('exam-setup').hidden);
 }
 
 /* 換題庫或組合：題目、科目選單、模擬考各科題數跟著換 */
@@ -70,6 +78,7 @@ async function init() {
         $('question').textContent = '找不到題庫。請確認 banks/ 資料夾裡有題庫檔。';
         return;
     }
+    await loadNotes();   // 要在讀紀錄之前：紀錄裡如果有舊版存的解析，會搬進來
     records = await loadRecords();
     renderSourceSelect();
     $('f-source').value = src.id;
@@ -82,6 +91,10 @@ async function init() {
     initExam();
     $('f-source').onchange = onSourceChanged;
     $('undo-btn').onclick = undoAnswer;
+    // 練習：複製題目隨時可以用；解析答完才出現（看了等於看答案）
+    $('copy-slot').prepend(copyQuestionButton(() => session && queue[pos]));
+    const practiceNote = noteButton(() => session && queue[pos]);
+    $('note-slot').appendChild(practiceNote);
     document.querySelectorAll('#tabs .tab').forEach(t => { t.onclick = () => setView(t.dataset.view); });
 
     $('start-btn').onclick = toggleStart;
@@ -98,6 +111,19 @@ async function init() {
     $('noreview-btn').onclick = () => toggleMark('noReview');
     $('export-json').onclick = exportJson;
     $('export-csv').onclick = exportCsv;
+    $('export-notes').onclick = exportNotes;
+    $('import-notes').onclick = () => $('import-notes-file').click();
+    $('import-notes-file').onchange = async e => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const data = JSON.parse(await file.text());
+            if (!isNotesData(data)) throw new Error('這不是解析檔');
+            alert(`解析：更新 ${await mergeNotes(data.notes)} 題（同一題以較晚改的為準）`);
+            refreshNoteButtons();
+        } catch (err) { alert(`匯入解析失敗：${err.message}`); }
+    };
     let importMode = 'merge';
     $('import-merge').onclick = () => { importMode = 'merge'; $('import-file').click(); };
     $('import-replace').onclick = () => { importMode = 'replace'; $('import-file').click(); };
@@ -109,8 +135,8 @@ async function init() {
     };
 
     document.addEventListener('keydown', e => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-        if ($('round-dialog').open) return;   // 彈窗開著時交給彈窗處理（Enter 按下聚焦的按鈕、Esc 關閉）
+        if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+        if ($('round-dialog').open || $('note-dialog').open) return;   // 彈窗開著時交給彈窗處理（Enter 按下聚焦的按鈕、Esc 關閉）
         if (view === 'exam') return examKey(e);
         if (view !== 'quiz') return;   // 題目總覽頁不使用作答快捷鍵
         const k = e.key.toLowerCase();
@@ -132,6 +158,8 @@ async function init() {
     readFilters();
     render();        // 先顯示設定畫面，按「開始」才出題
     initRecordFile();
+    initNotesFile();
+    initNoteDialogDrag();
     onDataChanged(onOtherTabChanged);
 }
 
@@ -144,6 +172,7 @@ async function onOtherTabChanged(kind) {
         if (view === 'browse') renderBrowse();
         return;
     }
+    if (kind === 'notes') { await loadNotes(); refreshNoteButtons(); scheduleNotesWrite(); return; }   // 其他分頁（例如題庫管理頁）匯入的解析也寫進連結的解析檔
     if (kind === 'templates') return;   // 樣板只有題庫管理頁用得到
     if (session || exam) { alert('題庫或組合在其他分頁更新了，這一輪結束後請重新整理頁面。'); return; }
     location.reload();

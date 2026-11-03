@@ -15,6 +15,7 @@ async function reloadBanks() {
 }
 async function reloadAll() {
     await reloadBanks();
+    await loadNotes();   // 要在讀紀錄之前：紀錄裡如果有舊版存的解析，會搬進來
     records = await loadRecords();
     await loadTemplates();
     try { meta = (await idb('readonly', s => s.get(META_KEY))) || {}; } catch { meta = {}; }
@@ -112,6 +113,7 @@ function importByKind(data) {
     if (data && data.format === BANK_FORMAT) return importBankData(data);
     if (data && data.format === BACKUP_FORMAT) return restoreBackup(data);
     if (data && data.format === TEMPLATE_FORMAT) return importTemplate(data.template);
+    if (isNotesData(data)) return mergeNotes(data.notes).then(n => `解析：更新 ${n} 題（同一題以較晚改的為準）`);
     if (Array.isArray(data) && data.length && data.every(q => q && typeof q.question === 'string' && Array.isArray(q.options))) return importLegacyQuestions(data);
     if (isRecordData(data)) return importRecords(data);
     throw new Error('不認得的檔案格式');
@@ -252,7 +254,8 @@ async function deleteCombo(id) {
 /* ---------- 完整備份與還原 ---------- */
 async function buildBackup() {
     records = await loadRecords();
-    return { format: BACKUP_FORMAT, version: 1, createdAt: new Date().toISOString(), banks: Object.values(userBankData), combos: userCombos, templates: userTemplates, builtinCorrections, records: packRecords() };
+    await loadNotes();
+    return { format: BACKUP_FORMAT, version: 1, createdAt: new Date().toISOString(), banks: Object.values(userBankData), combos: userCombos, templates: userTemplates, builtinCorrections, records: packRecords(), notes: userNotes };
 }
 async function createBackup() {
     const data = await buildBackup();
@@ -286,6 +289,7 @@ async function restoreBackup(data) {
         notifyChanged('banks');
         msgs.push(`內建題庫的修正：還原 ${fixes.reduce((n, [, t]) => n + t.rows.length, 0)} 筆`);
     }
+    if (data.notes) msgs.push(`解析：更新 ${await mergeNotes(data.notes)} 題`);
     if (data.records) msgs.push(await importRecords(data.records));
     await reloadBanks();
     renderAll();
@@ -426,6 +430,7 @@ async function init() {
     onDataChanged(async kind => {
         if (kind === 'records') { records = await loadRecords(); renderAll(); }
         else if (kind === 'templates') { await loadTemplates(); refreshRanking(); renderTemplates(); }
+        else if (kind === 'notes') await loadNotes();
         else await reloadAll();
     });
 }
